@@ -120,7 +120,12 @@ function load() {
     return d;
   } catch (e) { return DEFAULTS(); }
 }
-function save() { localStorage.setItem(KEY, JSON.stringify(data)); }
+// Zapis lokalny (od razu) + zaznaczenie zmiany do wysłania do chmury
+function save() {
+  localStorage.setItem(KEY, JSON.stringify(data));
+  setMeta({ dirty: true, localTs: Date.now() });
+  schedulePush();
+}
 
 // Rekord dnia; migracja top -> goals
 function day(s) {
@@ -1947,9 +1952,135 @@ function revHistoria() {
 }
 
 // === EKRAN: USTAWIENIA ===
+// === SYNC: konto Firebase + kopia w chmurze. Dane nadal zapisują się lokalnie (localStorage) ===
+const SYNC_KEY = 'lifeos.sync';          // meta: { dirty, localTs, syncedTs, uid }
+let syncS = { st: 'local', msg: '' };    // local | checking | pending | synced | offline | error | nofb
+const SYNC_LABEL = {
+  local: 'tylko to urządzenie (zaloguj się, żeby synchronizować)', checking: 'sprawdzam chmurę…',
+  pending: 'czekam na wysłanie…', synced: 'zsynchronizowano', offline: 'offline · zmiany czekają w kolejce',
+  error: 'błąd synchronizacji', nofb: 'brak Firebase – tryb lokalny'
+};
+const FB_ERR = {
+  'auth/invalid-credential': 'Zły e-mail albo hasło.', 'auth/invalid-email': 'Nieprawidłowy e-mail.',
+  'auth/email-already-in-use': 'Ten e-mail ma już konto – zaloguj się.', 'auth/weak-password': 'Hasło musi mieć co najmniej 6 znaków.',
+  'auth/network-request-failed': 'Brak internetu.', 'auth/too-many-requests': 'Za dużo prób – odczekaj chwilę.'
+};
+const syncMeta = () => JSON.parse(localStorage.getItem(SYNC_KEY) || '{}');
+const setMeta = p => localStorage.setItem(SYNC_KEY, JSON.stringify({ ...syncMeta(), ...p }));
+function syncSet(st, msg = '') { syncS = { st, msg }; renderSyncBadge(); }
+function renderSyncBadge() {
+  const el = document.getElementById('syncBadge');
+  if (!el) return;
+  el.className = 'sync-' + syncS.st;
+  el.innerHTML = `<span class="dot"></span>${SYNC_LABEL[syncS.st] || ''}${syncS.msg ? ' · ' + esc(syncS.msg) : ''}`;
+}
+// Decyzja po zalogowaniu (czysta funkcja – testowana osobno)
+function syncDecision(remoteTs, meta, hasRemote) {
+  if (!hasRemote) return 'push';                       // w chmurze pusto → wyślij lokalne
+  const seen = meta.syncedTs || 0, dirty = !!meta.dirty;
+  const remoteNew = remoteTs > seen;
+  if (remoteNew && dirty) return 'conflict';           // obie strony mają zmiany
+  if (remoteNew) return 'pull';                        // w chmurze nowsze → pobierz
+  if (dirty) return 'push';                            // lokalnie nowsze → wyślij
+  return 'none';
+}
+let pushTimer = null;
+function schedulePush() { clearTimeout(pushTimer); pushTimer = setTimeout(pushNow, 700); }
+// Wysyłka: jeden dokument users/{uid}/app/data. Zmiany offline zostają oznaczone (dirty) i wyślą się po powrocie sieci.
+async function pushNow() {
+  const fb = window.FB;
+  if (!fb) return syncSet(window.FB_ERROR ? 'nofb' : 'local');
+  const u = fb.auth.currentUser;
+  if (!u) return syncSet('local');
+  if (!navigator.onLine) return syncSet('offline');
+  const json = JSON.stringify(data);
+  if (json.length > 900000) return syncSet('error', 'dane za duże (ponad 1 MB) – zrób eksport JSON');
+  syncSet('pending');
+  const ts = Date.now(), snapLocal = syncMeta().localTs || 0;
+  try {
+    await fb.setDoc(fb.doc(fb.db, 'users', u.uid, 'app', 'data'), { json, updatedAt: ts });
+    const now = syncMeta();
+    if ((now.localTs || 0) === snapLocal) {
+      setMeta({ dirty: false, syncedTs: ts, uid: u.uid });
+      syncSet('synced');
+    } else {                                           // w trakcie wysyłki była nowa zmiana
+      setMeta({ syncedTs: ts, uid: u.uid });
+      schedulePush();
+      syncSet('pending');
+    }
+  } catch (e) {
+    syncSet(navigator.onLine ? 'error' : 'offline', e.code || e.message);
+  }
+}
+// Pobranie z chmury: podmienia dane lokalne
+function applyRemote(remote) {
+  data = JSON.parse(remote.json);
+  localStorage.setItem(KEY, remote.json);
+  setMeta({ dirty: false, syncedTs: remote.updatedAt || 0, uid: window.FB.auth.currentUser.uid, localTs: Date.now() });
+  syncSet('synced');
+  render();
+}
+async function pullNow(u) {
+  const fb = window.FB;
+  syncSet('checking');
+  try {
+    const snap = await fb.getDoc(fb.doc(fb.db, 'users', u.uid, 'app', 'data'));
+    const remote = snap.exists() ? snap.data() : null;
+    let meta = syncMeta();
+    if (meta.uid && meta.uid !== u.uid) meta = { ...meta, syncedTs: 0, dirty: true };   // inne konto na tym urządzeniu
+    const act = syncDecision(remote ? remote.updatedAt || 0 : 0, meta, !!remote);
+    if (act === 'conflict') {
+      const useCloud = confirm('Na tym urządzeniu są zmiany, których nie wysłano, a w chmurze są nowsze dane.\n\nOK = użyj danych z chmury (zmiany z tego urządzenia zostaną zastąpione).\nAnuluj = wyślij dane z tego urządzenia (nadpisze chmurę).');
+      return useCloud ? applyRemote(remote) : pushNow();
+    }
+    if (act === 'pull') return applyRemote(remote);
+    setMeta({ uid: u.uid, syncedTs: meta.syncedTs || 0, dirty: !!meta.dirty });
+    if (act === 'push') return pushNow();
+    syncSet('synced');
+  } catch (e) {
+    syncSet(navigator.onLine ? 'error' : 'offline', e.code || e.message);
+  }
+}
+function syncInit() {
+  if (!window.FB) { syncSet(window.FB_ERROR ? 'nofb' : 'local'); return; }
+  window.FB.onUser(u => { if (u) pullNow(u); else syncSet('local'); render(); });
+  window.addEventListener('online', () => { if (syncMeta().dirty && window.FB && window.FB.auth.currentUser) pushNow(); });
+  window.addEventListener('offline', () => syncSet('offline'));
+}
+async function syncAuth(mode) {
+  if (!window.FB) return alert('Brak połączenia z Firebase – aplikacja działa lokalnie.');
+  const e = document.getElementById('syncEmail').value.trim(), p = document.getElementById('syncPass').value;
+  if (!e || !p) return alert('Wpisz e-mail i hasło.');
+  try {
+    if (mode === 'login') await window.FB.signIn(e, p); else await window.FB.register(e, p);
+  } catch (err) {
+    alert(FB_ERR[err.code] || ('Nie udało się: ' + (err.code || err.message)));
+  }
+}
+function syncCard() {
+  const fb = window.FB, u = fb && fb.auth.currentUser;
+  if (!fb) return `<div class="card"><div class="mut">Konto i synchronizacja</div>
+    <div class="hint">Brak połączenia z Firebase (konfiguracja albo internet). Dane zapisują się tylko na tym urządzeniu.</div></div>`;
+  if (u) return `<div class="card"><div class="mut">Konto i synchronizacja</div>
+    <div style="margin:6px 0"><b>${esc(u.email || 'zalogowano')}</b></div>
+    <div class="mut">Status: ${esc(SYNC_LABEL[syncS.st] || '')}${syncS.msg ? ' · ' + esc(syncS.msg) : ''}</div>
+    <div class="row keep" style="gap:8px;margin-top:10px;flex-wrap:wrap">
+      <button data-act="syncNow">↻ Synchronizuj teraz</button>
+      <button class="danger" data-act="syncLogout">Wyloguj</button></div>
+    <div class="hint">Wylogowanie nie kasuje danych z tego urządzenia.</div></div>`;
+  return `<div class="card"><div class="mut">Konto i synchronizacja</div>
+    <div class="hint">Zaloguj się tym samym kontem na telefonie i komputerze. Hasło min. 6 znaków.</div>
+    <label>E-mail</label><input id="syncEmail" type="email" autocomplete="username">
+    <label>Hasło</label><input id="syncPass" type="password" autocomplete="current-password">
+    <div class="row keep" style="gap:8px;margin-top:10px;flex-wrap:wrap">
+      <button class="pri" data-act="syncLogin">Zaloguj</button>
+      <button data-act="syncRegister">Załóż konto</button></div></div>`;
+}
+
 function screenUstaw() {
   return `
   <h1 style="margin:6px 0 4px">⚙️ Ustawienia</h1>
+  ${syncCard()}
   <div class="sec"><h2>✅ Minimum dnia</h2><small>punkty do streaka</small></div>
   <div class="card">
     ${data.minimum.map(m => `<div class="item">
@@ -2277,6 +2408,10 @@ const ACT = {
     data.template.push({ id: uid(), name: f.name, from: f.from, to: f.to, area: f.area, days: f.days });
     save(); closeSheet(); render();
   },
+  syncLogin: () => syncAuth('login'),
+  syncRegister: () => syncAuth('register'),
+  syncLogout: async () => { if (window.FB) await window.FB.signOut(); syncSet('local'); render(); },
+  syncNow: () => { const u = window.FB && window.FB.auth.currentUser; if (u) pullNow(u); },
   sheetClose: () => closeSheet(),
 
   recNew: el => openRec(el.dataset.c, null),
@@ -2609,3 +2744,6 @@ setInterval(() => {
   if (e && data.draft) e.textContent = fmtT(Math.floor((Date.now() - data.draft.start) / 1000));
 }, 1000);
 render();
+// Start synchronizacji: gdy moduł Firebase już działa albo po zdarzeniu fb-ready
+if (window.FB || window.FB_ERROR) syncInit(); else document.addEventListener('fb-ready', syncInit, { once: true });
+renderSyncBadge();

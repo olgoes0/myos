@@ -13,7 +13,7 @@ const alerts = [];
 const ctx = { console: { log() {}, error: console.error }, alert: m => alerts.push(m), confirm: () => true,
   localStorage: { getItem: k => store[k] ?? null, setItem: (k, v) => store[k] = v }, document: doc,
   window: { scrollTo() {} }, URL: { createObjectURL: () => 'x' }, Blob: function () {}, FileReader: function () {},
-  setTimeout: () => {}, setInterval: () => 1, clearInterval() {}, navigator: {} };
+  setTimeout: () => {}, clearTimeout: () => {}, setInterval: () => 1, clearInterval() {}, navigator: { onLine: true } };
 vm.createContext(ctx);
 vm.runInContext(fs.readFileSync(path.join(__dirname, '..', 'produkty.js'), 'utf8') + ';' + fs.readFileSync(APP, 'utf8') + `;globalThis.T={data:()=>data,day,save,ACT,CHG,parseMeal,calcTargets,parseEx,timer,e1rm,state,sumMacros,findFood,DEFAULTS,waterTargetL,themeVars,THEMES,render,lastEntry,todayISO,addDays};`, ctx);
 const T = ctx.T;

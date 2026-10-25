@@ -247,6 +247,13 @@ main.wide{max-width:none}
 .week-wrap{overflow:visible;margin:0;padding:0}
 .week{min-width:0;grid-template-columns:repeat(7,minmax(0,1fr));gap:12px}
 @media (max-width:900px){.week{grid-template-columns:1fr}}
+/* v18: pasek statusu synchronizacji */
+#syncBadge{position:fixed;left:50%;transform:translateX(-50%);bottom:10px;z-index:12;pointer-events:none;background:var(--card);border:1px solid var(--line);border-radius:999px;padding:6px 12px;font-size:12.5px;box-shadow:0 4px 14px -6px var(--shadow);max-width:92vw;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#syncBadge .dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px;background:#aaa;vertical-align:middle}
+#syncBadge.sync-synced .dot{background:#22a06b}
+#syncBadge.sync-pending .dot,#syncBadge.sync-checking .dot{background:#e6a100}
+#syncBadge.sync-offline .dot{background:#888}
+#syncBadge.sync-error .dot{background:#e5484d}
 </style>
 </head>
 <body>
@@ -263,10 +270,31 @@ main.wide{max-width:none}
 <div id="timerbar" class="timerbar hidden"></div>
 
 <main id="app"></main>
+<div id="syncBadge" class="sync-local"></div>
 
 <div id="drawer" class="drawer hidden"><div class="dpanel" id="drawerBox"></div></div>
 <div id="sheet" class="sheet hidden"><div class="box" id="sheetBox"></div></div>
 
+<script type="module">
+// Firebase (logowanie + Firestore). Jeśli SDK się nie załaduje, aplikacja działa lokalnie.
+import { firebaseConfig } from './firebase-config.js';
+import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js';
+import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js';
+import { initializeFirestore, persistentLocalCache, doc, getDoc, setDoc } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js';
+try {
+  const app = initializeApp(firebaseConfig);
+  const auth = getAuth(app);
+  const db = initializeFirestore(app, { localCache: persistentLocalCache({}) });
+  window.FB = {
+    auth, db, doc, getDoc, setDoc,
+    signIn: (e, p) => signInWithEmailAndPassword(auth, e, p),
+    register: (e, p) => createUserWithEmailAndPassword(auth, e, p),
+    signOut: () => signOut(auth),
+    onUser: cb => onAuthStateChanged(auth, cb)
+  };
+} catch (e) { window.FB_ERROR = e.message; }
+document.dispatchEvent(new Event('fb-ready'));
+</script>
 <script src="produkty.js" defer></script>
 <script src="app.js" defer></script>
 <script>if('serviceWorker' in navigator){navigator.serviceWorker.register('sw.js');}</script>

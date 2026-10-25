@@ -10,7 +10,7 @@ const ctx = {
   console, localStorage: { getItem: k => (k in store ? store[k] : null), setItem: (k, v) => { store[k] = String(v); } },
   alert: m => { ctx.lastAlert = m; }, confirm: () => true, navigator: {},
   document: { documentElement: { style: { setProperty() {} }, dataset: {} }, getElementById: getEl, querySelectorAll: () => [], querySelector: () => null, addEventListener() {}, createElement: () => mk('x'), body: mk('b') },
-  window: { addEventListener() {}, scrollTo() {} }, setTimeout: () => 0, setInterval: () => 1, clearInterval() {}, fetch: async () => ({ json: async () => ({ products: [] }) }),
+  window: { addEventListener() {}, scrollTo() {} }, setTimeout: () => 0, clearTimeout: () => {}, setInterval: () => 1, clearInterval() {}, fetch: async () => ({ json: async () => ({ products: [] }) }),
   URL: { createObjectURL() { return 'x'; } }, Blob: function () {}, FileReader: function () {}
 };
 vm.createContext(ctx);

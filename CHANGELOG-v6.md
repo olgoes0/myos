@@ -232,3 +232,26 @@ Przycisk **„Przywróć kolory motywu”** kasuje Twoje ustawienia.
 - Na ekranach węższych niż 900 px dni są pionową listą, bez przewijania poziomego.
 - Pozostałe ekrany mają dalej stałą szerokość treści (820 px).
 - `lifeos-v17` w `sw.js`.
+
+## v18 – konto i synchronizacja (Firebase)
+
+**Co działa w kodzie**
+- **Logowanie e-mailem:** w Ustawieniach karta „Konto i synchronizacja” (zaloguj, załóż konto, wyloguj).
+- **Zapis w chmurze:** dane zalogowanego użytkownika trafiają do Firestore, do dokumentu `users/{uid}/app/data`.
+- **Tryb offline:** każda zmiana zapisuje się od razu lokalnie. Jeśli nie ma internetu, zmiana czeka w kolejce i wysyła się po powrocie sieci. Kolejka przetrwa odświeżenie strony.
+- **Status:** pasek na dole ekranu pokazuje: zsynchronizowano / czekam na wysłanie / offline / błąd / tylko to urządzenie.
+- **Konflikt:** jeśli na obu urządzeniach były zmiany, aplikacja pyta, czy użyć danych z chmury, czy wysłać dane z tego urządzenia.
+- **Import JSON** też wysyła zmiany do chmury.
+
+**Ograniczenia, o których trzeba wiedzieć**
+- Synchronizacja zapisuje cały stan aplikacji jako jeden dokument. Limit Firestore to ok. 1 MB, a aplikacja ostrzega przy 900 KB.
+- Przy jednoczesnej edycji na dwóch urządzeniach wygrywa ostatnia wysłana wersja (z pytaniem przy konflikcie).
+- Testy `testy/sync-test.js` działają na atrapie Firebase. **Nie zastępują testu na prawdziwym Firebase** — ten trzeba zrobić na dwóch urządzeniach.
+
+**Wymagane w konsoli Firebase**
+- Authentication → Sign-in method → Email/Password: Enabled.
+- Firestore → Rules: wklej zawartość `firestore.rules` i kliknij Publish.
+
+**Pliki**
+- `firebase-config.js` (publiczna konfiguracja, nie sekret), `firestore.rules`, zmiany w `index.html`, `app.js`, `sw.js` (`lifeos-v18`, dodano `firebase-config.js` do cache).
+- Testy: `testy/sync-test.js` (ALL PASS na atrapie), `testy/blocks-test.js`, `testy/smoke-v6.js`, `testy/test-v4.js` (ALL PASS).
