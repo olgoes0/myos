@@ -124,6 +124,7 @@ function load() {
 function save() {
   localStorage.setItem(KEY, JSON.stringify(data));
   setMeta({ dirty: true, localTs: Date.now() });
+  bkAuto();
   schedulePush();
 }
 
@@ -1999,6 +2000,7 @@ async function pushNow() {
   const ts = Date.now(), snapLocal = syncMeta().localTs || 0;
   try {
     await fb.setDoc(fb.doc(fb.db, 'users', u.uid, 'app', 'data'), { json, updatedAt: ts });
+    await shareWrite(json, ts);
     const now = syncMeta();
     if ((now.localTs || 0) === snapLocal) {
       setMeta({ dirty: false, syncedTs: ts, uid: u.uid });
@@ -2043,7 +2045,10 @@ async function pullNow(u) {
 }
 function syncInit() {
   if (!window.FB) { syncSet(window.FB_ERROR ? 'nofb' : 'local'); return; }
-  window.FB.onUser(u => { if (u) pullNow(u); else syncSet('local'); render(); });
+  window.FB.onUser(u => {
+    if (u) { shareLoad(u.uid); bkCloudRefresh(true); pullNow(u); }
+    else { shareS = { on: false, key: null }; bkCloud = []; syncSet('local'); render(); }
+  });
   window.addEventListener('online', () => { if (syncMeta().dirty && window.FB && window.FB.auth.currentUser) pushNow(); });
   window.addEventListener('offline', () => syncSet('offline'));
 }
@@ -2077,6 +2082,146 @@ function syncCard() {
       <button data-act="syncRegister">Załóż konto</button></div></div>`;
 }
 
+// === KOPIE ZAPASOWE I COFANIE ===
+// Lokalnie: ostatnie 3 kopie w przeglądarce (mały limit). W chmurze: ostatnie 20 (users/{uid}/backups).
+// Kopia robi się automatycznie co godzinę przy zmianie, ręcznie i zawsze przed importem/wyczyszczeniem.
+// Cofnięcie najpierw zapisuje obecne dane jako kopię, więc też da się je przywrócić.
+const BK_KEY = 'lifeos.backups', BK_MAX_LOCAL = 3, BK_MAX_CLOUD = 20, BK_EVERY = 60 * 60 * 1000;
+let bkCloud = [];   // kopie z chmury: [{ ts, label, json }] – odświeżane po zalogowaniu
+const fmtStamp = ts => new Date(ts).toLocaleString('pl-PL', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+const bkLocal = () => { try { return JSON.parse(localStorage.getItem(BK_KEY) || '[]'); } catch (e) { return []; } };
+function bkMake(label) {
+  const json = JSON.stringify(data);
+  const list = [{ ts: Date.now(), label, json }, ...bkLocal()].slice(0, BK_MAX_LOCAL);
+  try { localStorage.setItem(BK_KEY, JSON.stringify(list)); }
+  catch (e) { try { localStorage.setItem(BK_KEY, JSON.stringify(list.slice(0, 1))); } catch (e2) { /* brak miejsca w przeglądarce */ } }
+  bkCloudPut(json, label);
+}
+// Automatyczna kopia – najwyżej raz na godzinę
+function bkAuto() {
+  const last = bkLocal()[0];
+  if (!last || Date.now() - last.ts > BK_EVERY) bkMake('auto');
+}
+async function bkCloudPut(json, label) {
+  const fb = window.FB, u = fb && fb.auth.currentUser;
+  if (!u || !navigator.onLine) return;
+  try {
+    const ts = Date.now();
+    await fb.setDoc(fb.doc(fb.db, 'users', u.uid, 'backups', String(ts)), { json, label, ts });
+    await bkCloudRefresh(true);
+  } catch (e) { /* kopia w chmurze nie wyszła – lokalna zostaje */ }
+}
+async function bkCloudRefresh(prune) {
+  const fb = window.FB, u = fb && fb.auth.currentUser;
+  if (!u) { bkCloud = []; return; }
+  try {
+    const snap = await fb.getDocs(fb.query(fb.collection(fb.db, 'users', u.uid, 'backups'), fb.orderBy('ts', 'desc')));
+    const docs = snap.docs.map(d => d.data());
+    if (prune && docs.length > BK_MAX_CLOUD) {
+      await Promise.all(docs.slice(BK_MAX_CLOUD).map(d => fb.deleteDoc(fb.doc(fb.db, 'users', u.uid, 'backups', String(d.ts)))));
+    }
+    bkCloud = docs.slice(0, BK_MAX_CLOUD);
+  } catch (e) { /* offline – zostaje poprzednia lista */ }
+  if (state.screen === 'ustaw') render();
+}
+function bkRestore(src, ts) {
+  const it = (src === 'cloud' ? bkCloud : bkLocal()).find(x => x.ts === ts);
+  if (!it || !it.json) return alert('Nie znaleziono tej kopii.');
+  let obj;
+  try { obj = JSON.parse(it.json); } catch (e) { return alert('Ta kopia jest uszkodzona.'); }
+  if (!obj || !obj.days) return alert('Ta kopia nie wygląda na dane Life OS.');
+  if (!confirm(`Cofnąć dane do kopii z ${fmtStamp(ts)} (${it.label})?\n\nObecne dane zostaną najpierw zapisane jako kopia „przed cofnięciem”.`)) return;
+  bkMake('przed cofnięciem');
+  localStorage.setItem(KEY, JSON.stringify(obj));
+  data = load();
+  save(); render();
+  alert('Cofnięto do wybranej kopii.');
+}
+function bkCard() {
+  const loc = bkLocal(), cloudOn = !!(window.FB && window.FB.auth.currentUser);
+  const row = (src, x) => `<div class="item"><div class="grow"><div><b>${fmtStamp(x.ts)}</b> · ${esc(x.label)}</div>
+    <div class="mut">${src === 'cloud' ? 'w chmurze' : 'na tym urządzeniu'}</div></div>
+    <button data-act="bkRestore" data-src="${src}" data-ts="${x.ts}">Cofnij do tej</button></div>`;
+  return `<div class="sec"><h2>🕘 Kopie i cofanie</h2><small>auto co godzinę</small></div>
+  <div class="card">
+    <div class="hint" style="margin-top:0">Cofnięcie zapisuje obecne dane jako kopię, więc też można je przywrócić.</div>
+    <div class="row keep" style="margin-top:8px"><button class="pri" data-act="bkNow">Zrób kopię teraz</button></div>
+    ${cloudOn
+      ? (bkCloud.length ? '<div class="mut" style="margin-top:10px">W chmurze</div>' + bkCloud.map(x => row('cloud', x)).join('')
+                        : '<div class="hint">Kopii w chmurze jeszcze nie ma.</div>')
+      : '<div class="hint">Zaloguj się, żeby kopie szły też do chmury.</div>'}
+    ${loc.length ? '<div class="mut" style="margin-top:10px">Na tym urządzeniu</div>' + loc.map(x => row('local', x)).join('') : ''}
+  </div>`;
+}
+
+// === PODGLĄD DLA AGENTÓW (tylko odczyt, bez logowania) ===
+// Po włączeniu aplikacja zapisuje kopię danych pod losowym kluczem: dokument shares/{klucz}.
+// Kto zna klucz, widzi dane, ale nic nie może zmienić (reguły Firebase). Klucz można zmienić, co odcina stary link.
+let shareS = { on: false, key: null };
+const shareUrl = () => `https://firestore.googleapis.com/v1/projects/${window.FB.projectId}/databases/(default)/documents/shares/${shareS.key}`;
+function shareMakeKey() {
+  const a = new Uint8Array(24);
+  crypto.getRandomValues(a);
+  return Array.from(a, b => b.toString(36).padStart(2, '0')).join('').slice(0, 32);
+}
+async function shareLoad(uid) {
+  const fb = window.FB;
+  try {
+    const s = await fb.getDoc(fb.doc(fb.db, 'users', uid, 'app', 'share'));
+    const v = s.exists() ? s.data() : {};
+    shareS = { on: !!(v.on && v.key), key: v.key || null };
+  } catch (e) { shareS = { on: false, key: null }; }
+  if (state.screen === 'ustaw') render();
+}
+async function shareSaveCfg() {
+  const fb = window.FB, u = fb.auth.currentUser;
+  try { await fb.setDoc(fb.doc(fb.db, 'users', u.uid, 'app', 'share'), { on: shareS.on, key: shareS.key }); }
+  catch (e) { alert('Nie udało się zapisać ustawień podglądu: ' + (e.code || e.message)); }
+}
+// Wysyłka kopii dla agentów (wołane po każdej udanej wysyłce danych)
+async function shareWrite(json, ts) {
+  const fb = window.FB, u = fb && fb.auth.currentUser;
+  if (!u || !shareS.on || !shareS.key) return;
+  try { await fb.setDoc(fb.doc(fb.db, 'shares', shareS.key), { owner: u.uid, json, updatedAt: ts }); }
+  catch (e) { /* podgląd nie wyszedł – spróbuje przy następnej wysyłce */ }
+}
+async function shareOn() {
+  const u = window.FB && window.FB.auth.currentUser;
+  if (!u) return alert('Najpierw zaloguj się.');
+  if (!confirm('Włączyć podgląd dla agentów?\n\nKto dostanie link, zobaczy wszystkie Twoje dane (w tym zdrowotne), ale nie będzie mógł ich zmieniać.')) return;
+  shareS = { on: true, key: shareMakeKey() };
+  await shareSaveCfg();
+  setMeta({ dirty: true, localTs: Date.now() });
+  await pushNow();
+  render();
+}
+async function shareStop(newKey) {
+  const fb = window.FB, u = fb && fb.auth.currentUser;
+  if (!u) return;
+  if (shareS.key) { try { await fb.deleteDoc(fb.doc(fb.db, 'shares', shareS.key)); } catch (e) { /* może już nie istnieć */ } }
+  shareS = newKey ? { on: true, key: shareMakeKey() } : { on: false, key: null };
+  await shareSaveCfg();
+  if (shareS.on) { setMeta({ dirty: true, localTs: Date.now() }); await pushNow(); }
+  render();
+}
+function shareCard() {
+  const u = window.FB && window.FB.auth.currentUser;
+  const head = '<div class="sec"><h2>👀 Podgląd dla agentów</h2><small>tylko odczyt</small></div>';
+  if (!u) return `${head}<div class="card"><div class="hint" style="margin-top:0">Podgląd działa dla zalogowanego konta. Najpierw się zaloguj (karta na górze Ustawień).</div></div>`;
+  if (!shareS.on) return `${head}<div class="card">
+    <div class="hint" style="margin-top:0">Agent dostanie link i zobaczy Twoje dane, bez logowania i bez możliwości zmian. Ty dalej wszystko edytujesz w aplikacji.</div>
+    <div class="row keep" style="margin-top:8px"><button class="pri" data-act="shareOn">Włącz podgląd</button></div></div>`;
+  return `${head}<div class="card">
+    <div class="mut">Link dla agenta (wklej mu go i napisz, że ma tylko go odczytać):</div>
+    <div class="item" style="word-break:break-all;font-size:12px"><code>${esc(shareUrl())}</code></div>
+    <div class="hint">Dane są w polu <b>fields → json → stringValue</b>. Zmiany pojawiają się kilka sekund po zapisie w aplikacji.</div>
+    <div class="row keep" style="flex-wrap:wrap;gap:8px;margin-top:8px">
+      <button class="pri" data-act="shareCopy">Kopiuj link</button>
+      <button data-act="shareNewKey">Nowy klucz (odcina stary link)</button>
+      <button class="danger" data-act="shareOff">Wyłącz podgląd</button></div>
+    <div class="hint" style="color:#b45309">Uwaga: każdy z tym linkiem zobaczy WSZYSTKIE Twoje dane, także zdrowotne. Nie wysyłaj go publicznie.</div></div>`;
+}
+
 function screenUstaw() {
   return `
   <h1 style="margin:6px 0 4px">⚙️ Ustawienia</h1>
@@ -2104,6 +2249,8 @@ function screenUstaw() {
   </div></div>
 
   ${themeSection()}
+  ${shareCard()}
+  ${bkCard()}
   <div class="sec"><h2>💾 Dane</h2></div>
   <div class="card">
     <div class="hint" style="margin-top:0">Dane są na razie tylko w tej przeglądarce. Zrób backup, zanim cokolwiek zmienisz.</div>
@@ -2494,11 +2641,17 @@ const ACT = {
     data.minimum = data.minimum.filter(m => m.id !== el.dataset.id); save(); render();
   },
 
+  bkNow: () => { bkMake('ręczna'); render(); alert('Zrobiono kopię.'); },
+  bkRestore: el => bkRestore(el.dataset.src, +el.dataset.ts),
+  shareOn: () => shareOn(),
+  shareCopy: () => { navigator.clipboard.writeText(shareUrl()).then(() => alert('Skopiowano link.'), () => alert('Nie udało się skopiować. Zaznacz link i skopiuj ręcznie.')); },
+  shareNewKey: () => { if (confirm('Wygenerować nowy klucz? Stary link przestanie działać.')) shareStop(true); },
+  shareOff: () => { if (confirm('Wyłączyć podgląd? Link przestanie działać.')) shareStop(false); },
   exportJSON: () => download(`life-os-backup-${todayISO()}.json`, JSON.stringify(data, null, 2), 'application/json'),
   exportCSV: () => exportCSV(),
   importPick: () => document.getElementById('importFile').click(),
   reset: () => {
-    if (confirm('Na pewno usunąć WSZYSTKIE dane? Najpierw zrób eksport JSON.')) { data = DEFAULTS(); save(); render(); }
+    if (confirm('Na pewno usunąć WSZYSTKIE dane? Najpierw zrób eksport JSON.')) { bkMake('przed wyczyszczeniem'); data = DEFAULTS(); save(); render(); }
   }
 };
 
@@ -2682,6 +2835,7 @@ function importFile(el) {
       const obj = JSON.parse(r.result);
       if (!obj || ![1, 2, 3, 4, 5, 6].includes(obj.v)) throw new Error('to nie jest backup Life OS');
       if (!confirm('Zaimportować i NADPISAĆ obecne dane?')) return;
+      bkMake('przed importem');
       localStorage.setItem(KEY, JSON.stringify(obj));
       data = load();
       save(); render();

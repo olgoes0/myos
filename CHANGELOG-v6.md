@@ -255,3 +255,11 @@ Przycisk **„Przywróć kolory motywu”** kasuje Twoje ustawienia.
 **Pliki**
 - `firebase-config.js` (publiczna konfiguracja, nie sekret), `firestore.rules`, zmiany w `index.html`, `app.js`, `sw.js` (`lifeos-v18`, dodano `firebase-config.js` do cache).
 - Testy: `testy/sync-test.js` (ALL PASS na atrapie), `testy/blocks-test.js`, `testy/smoke-v6.js`, `testy/test-v4.js` (ALL PASS).
+
+## v19 – kopie zapasowe, cofanie, podgląd dla agentów (tylko odczyt)
+- **Kopie zapasowe:** automatyczna kopia co godzinę (przy zmianie danych), ręczna („Zrób kopię teraz”) oraz zawsze przed importem i wyczyszczeniem. Lokalnie zostają 3 ostatnie, w chmurze 20 ostatnich.
+- **Cofanie:** w Ustawieniach → „🕘 Kopie i cofanie” wybierasz kopię i klikasz „Cofnij do tej”. Obecne dane są najpierw zapisane jako kopia „przed cofnięciem”, więc cofnięcie też da się odwrócić.
+- **Podgląd dla agentów:** w Ustawieniach → „👀 Podgląd dla agentów” włączasz podgląd. Powstaje link z długim losowym kluczem. Agent może tylko czytać (bez logowania, bez możliwości zmian). Zmiany widać kilka sekund po zapisie. „Nowy klucz” odcina stary link, „Wyłącz podgląd” kasuje kopię.
+- **Reguły Firebase:** dodano `shares/{klucz}` (odczyt dla każdego, kto zna klucz; zapis i usunięcie tylko właściciel; brak listowania). **Trzeba wkleić i opublikować nowe `firestore.rules`.**
+- Test: `testy/backup-test.js` (atrapa Firebase) – ALL PASS. Na prawdziwym Firebase jeszcze nie sprawdzone: odczyt linku bez logowania i reguły.
+- Wersja: `lifeos-v19` (sw.js).

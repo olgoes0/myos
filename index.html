@@ -280,13 +280,13 @@ main.wide{max-width:none}
 import { firebaseConfig } from './firebase-config.js';
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js';
 import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js';
-import { initializeFirestore, persistentLocalCache, doc, getDoc, setDoc } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js';
+import { initializeFirestore, persistentLocalCache, doc, getDoc, setDoc, deleteDoc, getDocs, collection, query, orderBy } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js';
 try {
   const app = initializeApp(firebaseConfig);
   const auth = getAuth(app);
   const db = initializeFirestore(app, { localCache: persistentLocalCache({}) });
   window.FB = {
-    auth, db, doc, getDoc, setDoc,
+    auth, db, doc, getDoc, setDoc, deleteDoc, getDocs, collection, query, orderBy, projectId: firebaseConfig.projectId,
     signIn: (e, p) => signInWithEmailAndPassword(auth, e, p),
     register: (e, p) => createUserWithEmailAndPassword(auth, e, p),
     signOut: () => signOut(auth),
