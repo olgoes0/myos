@@ -283,6 +283,41 @@ function minAddMulti(label, mons) {
   for (const mon of mons) data.minimum.push({ id: uid(), label, from: mon, until: addDays(mon, 6) });
   save(); render();
 }
+// === WYBÓR TYGODNI (rok → miesiąc → tygodnie Pn–Nd) ===
+// Używane przy dodawaniu punktu minimum do kilku tygodni naraz. Wybór trzymany w state.minPick.
+function weeksOfMonth(y, m) {                 // tygodnie (poniedziałki), które mają choć jeden dzień miesiąca
+  const first = `${y}-${pad(m)}-01`, last = iso(new Date(y, m, 0));
+  const out = [];
+  for (let w = mondayOf(first); w <= last; w = addDays(w, 7)) out.push(w);
+  return out;
+}
+const weekLabel = w => `${shortDate(w)} – ${shortDate(addDays(w, 6))}.${addDays(w, 6).slice(0, 4)}`;
+const MONTHS = ['Styczeń', 'Luty', 'Marzec', 'Kwiecień', 'Maj', 'Czerwiec', 'Lipiec', 'Sierpień', 'Wrzesień', 'Październik', 'Listopad', 'Grudzień'];
+function minPickOpen() {
+  const now = new Date();
+  if (!state.minPickY) state.minPickY = now.getFullYear();
+  if (!state.minPickM) state.minPickM = now.getMonth() + 1;
+  const y = state.minPickY, m = state.minPickM;
+  const years = [now.getFullYear() - 1, now.getFullYear(), now.getFullYear() + 1, now.getFullYear() + 2];
+  const weeks = weeksOfMonth(y, m);
+  openSheet(`<h2>Wybierz tygodnie</h2>
+    <div class="hint">Kliknij rok, miesiąc i zaznacz tygodnie (od poniedziałku do niedzieli). Możesz zaznaczać w kilku miesiącach.</div>
+    <label>Rok</label>
+    <div class="row keep" style="gap:6px;flex-wrap:wrap">${years.map(yy => `<button class="${yy === y ? 'pri' : ''}" data-act="minPickYear" data-y="${yy}">${yy}</button>`).join('')}</div>
+    <label>Miesiąc</label>
+    <div class="row keep" style="gap:6px;flex-wrap:wrap">${MONTHS.map((n, i) => `<button class="${i + 1 === m ? 'pri' : ''}" data-act="minPickMonth" data-m="${i + 1}" style="min-width:110px">${n}</button>`).join('')}</div>
+    <label>Tygodnie – ${MONTHS[m - 1]} ${y}</label>
+    <div style="display:flex;flex-direction:column;gap:6px;margin:6px 0">${weeks.map(w => {
+      const on = (state.minPick || []).includes(w);
+      return `<button data-act="minPickToggle" data-w="${w}" class="${on ? 'pri' : ''}" style="text-align:left">${on ? '✓ ' : ''}${weekLabel(w)}</button>`;
+    }).join('')}</div>
+    <div class="hint">Zaznaczone tygodnie: <b>${(state.minPick || []).length}</b></div>
+    <div class="foot">
+      <button class="pri full" data-act="minPickDone">Gotowe</button>
+      <button class="full" data-act="minPickClear">Wyczyść wybór</button>
+    </div>`);
+}
+
 // Karta „Minimum dnia” w Ustawieniach – widok tygodnia z przełącznikiem ‹ ›
 function minSettingsCard() {
   const mon = state.minWeek || mondayOf(todayISO()), sun = addDays(mon, 6);
@@ -308,9 +343,9 @@ function minSettingsCard() {
       <label class="pill"><input type="radio" name="minScope" value="week" checked> tylko ten tydzień</label>
       <label class="pill"><input type="radio" name="minScope" value="perm"> od tego tygodnia na stałe</label>
       <label class="pill"><input type="radio" name="minScope" value="multi"> w zaznaczonych tygodniach</label></div>
-    <div class="row keep" style="gap:6px;flex-wrap:wrap;margin-bottom:8px">${[0, 1, 2, 3, 4, 5, 6, 7].map(k => {
-      const w = addDays(mon, 7 * k);
-      return `<label class="pill"><input type="checkbox" name="minWk" value="${w}" ${k === 0 ? 'checked' : ''}> ${shortDate(w)}–${shortDate(addDays(w, 6))}</label>`; }).join('')}</div>
+    <div class="row keep" style="gap:8px;flex-wrap:wrap;margin-bottom:8px">
+      <button data-act="minPickOpen">🗓 Wybierz tygodnie (${(state.minPick || []).length})</button>
+      ${(state.minPick || []).length ? `<span class="mut">${[...state.minPick].sort().map(w => shortDate(w)).join(', ')}</span>` : ''}</div>
     <div class="addrow"><input id="newMin" placeholder="+ nowy punkt minimum"><button class="pri" data-act="minAdd">Dodaj</button></div>
     <div class="hint">Punkty dopisujesz do wybranego tygodnia (np. pod koniec tygodnia na następny). Pojedyncze dni usuwasz w ✕.</div>
   </div>`;
@@ -2778,12 +2813,23 @@ const ACT = {
     const sc = r ? r.value : 'week';
     const mon = state.minWeek || mondayOf(todayISO());
     if (sc === 'multi') {
-      const ws = [...document.querySelectorAll('input[name="minWk"]:checked')].map(x => x.value);
-      if (!ws.length) return alert('Zaznacz co najmniej jeden tydzień.');
+      const ws = [...(state.minPick || [])];
+      if (!ws.length) return alert('Wybierz co najmniej jeden tydzień (przycisk „Wybierz tygodnie”).');
+      state.minPick = []; state.minPickY = null; state.minPickM = null;
       return minAddMulti(v, ws);
     }
     minAddWeek(v, mon, sc === 'perm');
   },
+  minPickOpen: () => minPickOpen(),
+  minPickYear: el => { state.minPickY = +el.dataset.y; minPickOpen(); },
+  minPickMonth: el => { state.minPickM = +el.dataset.m; minPickOpen(); },
+  minPickToggle: el => {
+    const w = el.dataset.w, list = state.minPick || [];
+    state.minPick = list.includes(w) ? list.filter(x => x !== w) : list.concat([w]);
+    minPickOpen(); render();
+  },
+  minPickClear: () => { state.minPick = []; minPickOpen(); render(); },
+  minPickDone: () => { closeSheet(); render(); },
   minWeekShift: el => { state.minWeek = addDays(state.minWeek || mondayOf(todayISO()), 7 * +el.dataset.n); render(); },
   minWeekToday: () => { state.minWeek = mondayOf(todayISO()); render(); },
   minDel: el => {

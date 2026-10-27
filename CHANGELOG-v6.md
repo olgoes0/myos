@@ -293,3 +293,5 @@ Przycisk **„Przywróć kolory motywu”** kasuje Twoje ustawienia.
 - **Poprawka (v21):** okno ✕ przy punkcie pokazuje przyciski dni i zostaje otwarte. Kliknięcie dnia wyłącza go, kolejne kliknięcie włącza z powrotem. Te same przyciski są też na karcie punktu w Ustawieniach.
 - **Nowa opcja dodawania: „w zaznaczonych tygodniach”.** Zaznaczasz kilka tygodni (checkboxy) i punkt trafia do każdego z nich.
 - Testy: `minimum-test.js` – ALL PASS (z testami okna i wielu tygodni).
+- **Wybór tygodni (v21):** przycisk „🗓 Wybierz tygodnie” w Minimum dnia otwiera okienko: rok → miesiąc → lista tygodni od poniedziałku do niedzieli (np. 26.10 – 01.11.2026). Zaznaczasz kilka tygodni, potem „Gotowe” i „Dodaj” dopisuje punkt do wszystkich zaznaczonych.
+- Testy: `minimum-test.js` – ALL PASS (z testami wyboru tygodni).

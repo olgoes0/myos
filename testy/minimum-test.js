@@ -141,6 +141,23 @@ D.run(`state.minWeek = '${NEXT_WEEK_MON}'`);
 ok(D.run('screenUstaw()').includes('tydzień B'), 'widok tygodnia: w przyszłym tygodniu widać jego punkty');
 D.run(`state.minWeek = null`);
 
+// 7j) Wybór tygodni: rok → miesiąc → tygodnie Pn–Nd
+const oct = D.run(`weeksOfMonth(2026, 10)`);
+ok(oct[0] === '2026-09-28' && oct.includes('2026-10-26') && !oct.includes('2026-11-02'), 'tygodnie: październik 2026 zaczyna się od 28.09 i kończy na 26.10 (tydzień 26.10–01.11 w środku)');
+ok(D.run(`weekLabel('2026-10-26')`) === '26.10 – 01.11.2026', 'tygodnie: etykieta 26.10 – 01.11.2026');
+ok(oct.every(w => D.run(`new Date('${w}T12:00').getDay()`) === 1), 'tygodnie: każdy start to poniedziałek');
+D.run(`state.minPick = []; state.minPickY = 2026; state.minPickM = 10`);
+D.run(`ACT.minPickToggle({dataset:{w:'2026-10-26'}})`);
+D.run(`ACT.minPickToggle({dataset:{w:'2026-11-02'}})`);
+ok(D.run(`state.minPick.length`) === 2, 'wybór: zaznaczone 2 tygodnie');
+D.run(`ACT.minPickToggle({dataset:{w:'2026-10-26'}})`);
+ok(D.run(`state.minPick.length`) === 1 && D.run(`state.minPick[0]`) === '2026-11-02', 'wybór: drugi klik odznacza tydzień');
+ok(D.run(`document.getElementById('sheetBox').innerHTML.includes('Tygodnie')`) === true, 'wybór: okno z tygodniami jest otwarte');
+D.run(`minAddMulti('z wyboru', state.minPick)`);
+ok(D.run(`minFor('2026-11-02').some(m => m.label === 'z wyboru')`) === true, 'wybór: punkt trafia do zaznaczonego tygodnia');
+ok(D.run(`minFor('2026-10-26').some(m => m.label === 'z wyboru')`) === false, 'wybór: punkt nie trafia do odznaczonego tygodnia');
+D.run(`state.minPick = []`);
+
 // 8) Stare dane bez dat dalej działają jak dawniej (punkty bez from/until)
 ok(D.run(`data.minimum.filter(m => !m.from && !m.until).length`) >= 1, 'stare punkty bez dat nadal obowiązują');
 
