@@ -200,5 +200,28 @@ ok(D.run(`data.minimum.filter(m => !m.from && !m.until).length`) >= 1, 'stare pu
   ok(lab2[0] === '26.01 – 01.02.2026' && lab2[4] === '23.02 – 01.03.2026', 'luty 2026: 26.01–01.02 (1.02.2026 to niedziela) … 23.02–01.03');
 }
 
+// 12) Punkt dodany w kilku tygodniach jest jedną grupą: „całkowicie” i „od dziś” działają na wszystkie tygodnie
+{
+  const D4 = device();
+  const mon = D4.run('mondayOf(todayISO())');
+  const mons = [mon, D4.run(`addDays('${mon}', 7)`), D4.run(`addDays('${mon}', 14)`)];
+  D4.run(`minAddMulti('Grupa', ${JSON.stringify(mons)})`);
+  const first = D4.run(`data.minimum.find(x => x.label === 'Grupa').id`);
+  ok(D4.run(`minGroup('${first}').length`) === 3, 'grupa: 3 tygodnie = 3 wpisy w jednej grupie');
+  D4.run(`ACT.minDelAll({dataset:{id:'${first}'}})`);
+  ok(D4.run(`data.minimum.filter(x => x.label === 'Grupa').length`) === 0, 'Usuń całkowicie: znikają wszystkie tygodnie, nie tylko bieżący');
+
+  const D5 = device();
+  const mon5 = D5.run('mondayOf(todayISO())');
+  const m5 = [mon5, D5.run(`addDays('${mon5}', 7)`), D5.run(`addDays('${mon5}', 14)`)];
+  D5.run(`minAddMulti('Od teraz', ${JSON.stringify(m5)})`);
+  const id5 = D5.run(`data.minimum.find(x => x.label === 'Od teraz').id`);
+  D5.run(`ACT.minDelScope({dataset:{id:'${id5}'}})`);
+  const t5 = D5.run('todayISO()');
+  ok(D5.run(`data.minimum.filter(x => x.label === 'Od teraz' && x.from > todayISO()).length`) === 0, 'Usuń od dziś: znikają przyszłe tygodnie');
+  ok(D5.run(`data.minimum.filter(x => x.label === 'Od teraz' && (!x.until || x.until >= todayISO())).length`) === 0, 'Usuń od dziś: nic nie obowiązuje od dziś');
+  ok(D5.run(`data.minimum.filter(x => x.label === 'Od teraz').length`) <= 1, 'Usuń od dziś: dni przed dziś zostają w historii');
+}
+
 console.log(fails ? `\nMINIMUM TEST: ${fails} FAIL` : '\nMINIMUM TEST ALL PASS');
 process.exit(fails ? 1 : 0);

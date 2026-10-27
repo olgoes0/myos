@@ -303,3 +303,8 @@ Przycisk **„Przywróć kolory motywu”** kasuje Twoje ustawienia.
 - Test: lata 2026–2030 i daty lutego 2026/2027 w `minimum-test.js` – ALL PASS.
 - **Dziś – usunięte przyciski (v21, na prośbę):** z karty „Minimum dnia” na ekranie Dziś usunięto przycisk ✕ przy punkcie i wiersz „+ punkt tylko na ten dzień / Dodaj”. Dni tygodnia nadal wyłączasz i włączasz w Ustawieniach → Minimum dnia (przyciski Pn–Nd przy każdym punkcie). Link „↩ przywróć ukryte punkty na ten dzień” został.
 - Test: `minimum-test.js` sprawdza, że na Dziś nie ma tych przycisków – ALL PASS.
+- **Usuwanie punktu w kilku tygodniach (v21, poprawka):** punkt dodany „w zaznaczonych tygodniach” był zapisany jako osobne wpisy dla każdego tygodnia, więc „Usuń całkowicie” i „Usuń od dziś” działały tylko na jeden tydzień (albo nic nie robiły). Teraz wpisy z jednego dodania mają wspólny identyfikator grupy i oba przyciski działają na cały punkt:
+  - **Usuń całkowicie** – znika ze wszystkich tygodni i z historii dni (po potwierdzeniu).
+  - **Usuń od dziś** – przyszłe tygodnie znikają, a dni przed dziś zostają w historii.
+  - Stare punkty bez grupy są łączone po nazwie (wszystkie punkty o tej samej nazwie bez grupy traktowane są jak jeden).
+- Test: `minimum-test.js` – grupa, „całkowicie”, „od dziś” – ALL PASS.

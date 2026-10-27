@@ -203,6 +203,13 @@ function minAddScoped(label, sc) {
   save(); render();
 }
 // Usunięcie z Ustawień: sc = 'day' | 'week' | 'all'. Historia dni przed dziś zostaje.
+// Wszystkie wpisy należące do tego samego punktu (ten sam gid; stare punkty – ta sama nazwa bez gid)
+function minGroup(id) {
+  const m = byId(data.minimum, id);
+  if (!m) return [];
+  if (m.gid) return data.minimum.filter(x => x.gid === m.gid);
+  return data.minimum.filter(x => !x.gid && x.label === m.label);
+}
 function minRemoveScoped(id, sc) {
   const t = todayISO(), d = day(t);
   const extra = (d.minExtra || []).some(x => x.id === id);
@@ -211,11 +218,12 @@ function minRemoveScoped(id, sc) {
   else if (sc === 'week') {
     for (let x = t; x <= weekEnd(t); x = addDays(x, 1)) { const dd = day(x); dd.minOff = dd.minOff || {}; dd.minOff[id] = true; }
   } else {
-    const m = byId(data.minimum, id);
-    if (m) {
-      if (m.from && m.from >= t) data.minimum = data.minimum.filter(x => x.id !== id);   // zaczynał się dziś – po prostu znika
-      else m.until = addDays(t, -1);                                                    // wcześniejsze dni zostają
+    const grp = minGroup(id), gone = new Set();
+    for (const m of grp) {
+      if (m.from && m.from >= t) gone.add(m.id);                                        // zaczyna się dziś lub później – znika
+      else if (!m.until || m.until >= t) m.until = addDays(t, -1);                      // wcześniejsze dni zostają
     }
+    data.minimum = data.minimum.filter(x => !gone.has(x.id));
   }
   save(); render();
 }
@@ -251,12 +259,12 @@ function minRestoreWeek(id, mon) {
 }
 // Całkowite usunięcie: z listy i z całej historii (wszystkie dni, także przyszłe)
 function minDeleteAll(id) {
-  data.minimum = data.minimum.filter(x => x.id !== id);
+  const ids = new Set(minGroup(id).map(x => x.id)); ids.add(id);
+  data.minimum = data.minimum.filter(x => !ids.has(x.id));
   for (const k of Object.keys(data.days)) {
     const d = data.days[k];
-    if (d.min) delete d.min[id];
-    if (d.minOff) delete d.minOff[id];
-    if (d.minExtra) d.minExtra = d.minExtra.filter(x => x.id !== id);
+    for (const i of ids) { if (d.min) delete d.min[i]; if (d.minOff) delete d.minOff[i]; }
+    if (d.minExtra) d.minExtra = d.minExtra.filter(x => !ids.has(x.id));
   }
   save(); render();
 }
@@ -280,7 +288,8 @@ function minChips(m, mon) {
 }
 // Dopisanie punktu do kilku tygodni naraz (wybrane poniedziałki)
 function minAddMulti(label, mons) {
-  for (const mon of mons) data.minimum.push({ id: uid(), label, from: mon, until: addDays(mon, 6) });
+  const gid = uid();   // wszystkie wpisy z jednego dodania są jedną grupą (usuwanie całkowite / od dziś działa na całość)
+  for (const mon of mons) data.minimum.push({ id: uid(), gid, label, from: mon, until: addDays(mon, 6) });
   save(); render();
 }
 // === WYBÓR TYGODNI (rok → miesiąc → tygodnie Pn–Nd) ===
