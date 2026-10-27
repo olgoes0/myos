@@ -161,5 +161,36 @@ D.run(`state.minPick = []`);
 // 8) Stare dane bez dat dalej działają jak dawniej (punkty bez from/until)
 ok(D.run(`data.minimum.filter(m => !m.from && !m.until).length`) >= 1, 'stare punkty bez dat nadal obowiązują');
 
+// 9) Każdy przycisk z data-act ma swoją akcję (inaczej kliknięcie nic nie robi)
+{
+  const used = [...new Set([...APP_SRC.matchAll(/data-act=\\?"(\w+)\\?"/g)].map(m => m[1]))];
+  const keys = D.run('Object.keys(ACT)');
+  const missing = used.filter(k => !keys.includes(k));
+  ok(missing.length === 0, 'wszystkie przyciski mają akcję' + (missing.length ? ' – brakuje: ' + missing.join(', ') : ''));
+}
+
+// 10) Regresja v21: drugie kliknięcie dnia włącza z powrotem, okno zostaje otwarte;
+//     Dziś: dodaj na dzień, ✕ usuwa, przywróć działa
+{
+  const D2 = device();
+  D2.run(`minAddWeek('Woda', mondayOf(todayISO()), true)`);
+  const id = D2.run('data.minimum[0].id');
+  const s = D2.run('addDays(mondayOf(todayISO()),2)');
+  D2.run(`ACT.minDel({dataset:{id:'${id}'}})`);
+  D2.run(`ACT.minDayToggle({dataset:{id:'${id}',s:'${s}'}})`);
+  ok(D2.run(`JSON.stringify(data.days['${s}'].minOff||{})`).includes(id), 'dzień: 1. kliknięcie wyłącza');
+  ok(D2.run(`!document.getElementById('sheet').classList.contains('hidden')`) === true, 'dzień: okno zostaje otwarte po kliknięciu');
+  D2.run(`ACT.minDayToggle({dataset:{id:'${id}',s:'${s}'}})`);
+  ok(D2.run(`data.days['${s}'].minOff`) === undefined, 'dzień: 2. kliknięcie włącza z powrotem');
+  D2.run(`document.getElementById('dayMin').value='Rozciąganie'`);
+  D2.run(`ACT.minAddDay({dataset:{s:'${s}'}})`);
+  const xid = D2.run(`(data.days['${s}'].minExtra||[])[0] && data.days['${s}'].minExtra[0].id`);
+  ok(!!xid, 'Dziś: „Dodaj” tworzy punkt tylko na ten dzień');
+  D2.run(`ACT.minOffDay({dataset:{s:'${s}',id:'${xid}'}})`);
+  ok(D2.run(`(data.days['${s}'].minExtra||[]).length`) === 0, 'Dziś: ✕ usuwa punkt dodany na ten dzień');
+  D2.run(`ACT.minRestore({dataset:{s:'${s}'}})`);
+  ok(D2.run(`data.days['${s}'].minOff`) === undefined, 'Dziś: przywróć ukryte punkty');
+}
+
 console.log(fails ? `\nMINIMUM TEST: ${fails} FAIL` : '\nMINIMUM TEST ALL PASS');
 process.exit(fails ? 1 : 0);

@@ -295,3 +295,7 @@ Przycisk **„Przywróć kolory motywu”** kasuje Twoje ustawienia.
 - Testy: `minimum-test.js` – ALL PASS (z testami okna i wielu tygodni).
 - **Wybór tygodni (v21):** przycisk „🗓 Wybierz tygodnie” w Minimum dnia otwiera okienko: rok → miesiąc → lista tygodni od poniedziałku do niedzieli (np. 26.10 – 01.11.2026). Zaznaczasz kilka tygodni, potem „Gotowe” i „Dodaj” dopisuje punkt do wszystkich zaznaczonych.
 - Testy: `minimum-test.js` – ALL PASS (z testami wyboru tygodni).
+- **Poprawka przycisków (v21, 27.10.2026, wieczór):** w poprzedniej paczce brakowało trzech akcji w kodzie: „Dodaj” na ekranie Dziś (punkt tylko na ten dzień), ✕ na Dziś (ukryj na ten dzień) i „przywróć ukryte punkty na ten dzień”. Są przywrócone. Przyciski w aplikacji sprawdzają teraz, czy każda akcja istnieje (test „wszystkie przyciski mają akcję”).
+- Dodane testy regresji: drugie kliknięcie dnia włącza go z powrotem i okno zostaje otwarte; Dziś: dodaj / ✕ / przywróć.
+- Uwaga: jeśli po wgraniu nadal widać starą wersję, otwórz stronę w oknie prywatnym (Ctrl+Shift+N) albo odśwież z wyczyszczeniem pamięci podręcznej.
+- Testy: `minimum-test.js` ALL PASS; `sync-test.js`, `backup-test.js`, `test-v4.js`, `smoke-v6.js`, `blocks-test.js` – ALL PASS.

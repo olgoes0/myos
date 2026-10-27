@@ -2856,6 +2856,13 @@ const ACT = {
     const sheetOpen = !document.getElementById('sheet').classList.contains('hidden');
     if (sheetOpen && state.minSheet === id) ACT.minDel({ dataset: { id } });
   },
+  minAddDay: el => {
+    const inp = document.getElementById('dayMin'), v = ((inp && inp.value) || '').trim();
+    if (!v) return alert('Wpisz nazwę punktu.');
+    minDayAdd(el.dataset.s, v);
+  },
+  minOffDay: el => minDayOff(el.dataset.s, el.dataset.id),
+  minRestore: el => { const d = data.days[el.dataset.s]; if (d) delete d.minOff; save(); render(); },
   minDelDay: el => { closeSheet(); minHideDay(el.dataset.id, el.dataset.s); },
   minDelWeek: el => { closeSheet(); minHideWeek(el.dataset.id, el.dataset.s); },
   minRestoreWeek: el => { closeSheet(); minRestoreWeek(el.dataset.id, el.dataset.s); },
