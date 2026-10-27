@@ -701,8 +701,7 @@ function screenDzis() {
       <label class="grow" style="cursor:pointer;display:flex;align-items:center;gap:10px">
         <input type="checkbox" data-chg="min" data-id="${m.id}" ${d.min[m.id] ? 'checked' : ''}>
         <span class="t grow" style="font-size:18px">${esc(m.label)}${(d.minExtra || []).some(x => x.id === m.id) ? ' <small class="mut">(tylko ten dzień)</small>' : ''}</span></label>
-      <button class="x" data-act="minOffDay" data-s="${s}" data-id="${m.id}" aria-label="usuń na ten dzień">✕</button></div>`).join('') || '<div class="hint">Brak punktów minimum na ten dzień.</div>'}
-    <div class="addrow"><input id="dayMin" placeholder="+ punkt tylko na ten dzień"><button class="pri" data-act="minAddDay" data-s="${s}">Dodaj</button></div>
+      </div>`).join('') || '<div class="hint">Brak punktów minimum na ten dzień.</div>'}
     ${Object.keys(d.minOff || {}).length ? `<div class="row keep" style="margin-top:8px"><button class="link" data-act="minRestore" data-s="${s}">↩ przywróć ukryte punkty na ten dzień</button></div>` : ''}
   </div>
 

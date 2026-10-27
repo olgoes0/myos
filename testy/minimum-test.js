@@ -182,14 +182,9 @@ ok(D.run(`data.minimum.filter(m => !m.from && !m.until).length`) >= 1, 'stare pu
   ok(D2.run(`!document.getElementById('sheet').classList.contains('hidden')`) === true, 'dzień: okno zostaje otwarte po kliknięciu');
   D2.run(`ACT.minDayToggle({dataset:{id:'${id}',s:'${s}'}})`);
   ok(D2.run(`data.days['${s}'].minOff`) === undefined, 'dzień: 2. kliknięcie włącza z powrotem');
-  D2.run(`document.getElementById('dayMin').value='Rozciąganie'`);
-  D2.run(`ACT.minAddDay({dataset:{s:'${s}'}})`);
-  const xid = D2.run(`(data.days['${s}'].minExtra||[])[0] && data.days['${s}'].minExtra[0].id`);
-  ok(!!xid, 'Dziś: „Dodaj” tworzy punkt tylko na ten dzień');
-  D2.run(`ACT.minOffDay({dataset:{s:'${s}',id:'${xid}'}})`);
-  ok(D2.run(`(data.days['${s}'].minExtra||[]).length`) === 0, 'Dziś: ✕ usuwa punkt dodany na ten dzień');
-  D2.run(`ACT.minRestore({dataset:{s:'${s}'}})`);
-  ok(D2.run(`data.days['${s}'].minOff`) === undefined, 'Dziś: przywróć ukryte punkty');
+  // Dziś: bez przycisków „Dodaj” i ✕ przy punktach minimum (usunięte na prośbę użytkownika)
+  const dziś = D2.run(`(function(){ state.screen='dzis'; return typeof screenDzis==='function' ? screenDzis() : ''; })()`) || '';
+  ok(!String(dziś).includes('minAddDay') && !String(dziś).includes('minOffDay') && !String(dziś).includes('dayMin'), 'Dziś: brak przycisków „Dodaj” i ✕ przy punktach minimum');
 }
 
 // 11) Okno wyboru tygodni: lata 2026–2030, daty Pn–Nd zgodne z kalendarzem
