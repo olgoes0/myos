@@ -299,3 +299,5 @@ Przycisk **„Przywróć kolory motywu”** kasuje Twoje ustawienia.
 - Dodane testy regresji: drugie kliknięcie dnia włącza go z powrotem i okno zostaje otwarte; Dziś: dodaj / ✕ / przywróć.
 - Uwaga: jeśli po wgraniu nadal widać starą wersję, otwórz stronę w oknie prywatnym (Ctrl+Shift+N) albo odśwież z wyczyszczeniem pamięci podręcznej.
 - Testy: `minimum-test.js` ALL PASS; `sync-test.js`, `backup-test.js`, `test-v4.js`, `smoke-v6.js`, `blocks-test.js` – ALL PASS.
+- **Wybór tygodni (v21, poprawka dat i lat):** okno „Wybierz tygodnie” pokazuje lata 2026–2030 (wcześniej: rok bieżący ±1/+2). Daty sprawdzone dla wszystkich miesięcy 2026–2030 (312 tygodni) względem kalendarza: tygodnie od poniedziałku do niedzieli, np. luty 2026 zaczyna się 26.01–01.02 (1.02.2026 to niedziela), luty 2027 zaczyna się 01.02–07.02 (1.02.2027 to poniedziałek).
+- Test: lata 2026–2030 i daty lutego 2026/2027 w `minimum-test.js` – ALL PASS.

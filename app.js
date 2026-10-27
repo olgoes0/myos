@@ -298,7 +298,7 @@ function minPickOpen() {
   if (!state.minPickY) state.minPickY = now.getFullYear();
   if (!state.minPickM) state.minPickM = now.getMonth() + 1;
   const y = state.minPickY, m = state.minPickM;
-  const years = [now.getFullYear() - 1, now.getFullYear(), now.getFullYear() + 1, now.getFullYear() + 2];
+  const years = [2026, 2027, 2028, 2029, 2030];
   const weeks = weeksOfMonth(y, m);
   openSheet(`<h2>Wybierz tygodnie</h2>
     <div class="hint">Kliknij rok, miesiąc i zaznacz tygodnie (od poniedziałku do niedzieli). Możesz zaznaczać w kilku miesiącach.</div>

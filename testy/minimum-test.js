@@ -192,5 +192,18 @@ ok(D.run(`data.minimum.filter(m => !m.from && !m.until).length`) >= 1, 'stare pu
   ok(D2.run(`data.days['${s}'].minOff`) === undefined, 'Dziś: przywróć ukryte punkty');
 }
 
+// 11) Okno wyboru tygodni: lata 2026–2030, daty Pn–Nd zgodne z kalendarzem
+{
+  const D3 = device();
+  D3.run('minPickOpen()');
+  const html = D3.run(`document.getElementById('sheetBox').innerHTML`);
+  const yrs = [...html.matchAll(/data-act="minPickYear" data-y="(\d+)"/g)].map(m => +m[1]);
+  ok(JSON.stringify(yrs) === JSON.stringify([2026, 2027, 2028, 2029, 2030]), 'wybór roku: lata 2026–2030');
+  const lab = D3.run(`weeksOfMonth(2027,2).map(weekLabel)`);
+  ok(lab[0] === '01.02 – 07.02.2027', 'luty 2027: pierwszy tydzień 01.02–07.02 (1.02.2027 to poniedziałek)');
+  const lab2 = D3.run(`weeksOfMonth(2026,2).map(weekLabel)`);
+  ok(lab2[0] === '26.01 – 01.02.2026' && lab2[4] === '23.02 – 01.03.2026', 'luty 2026: 26.01–01.02 (1.02.2026 to niedziela) … 23.02–01.03');
+}
+
 console.log(fails ? `\nMINIMUM TEST: ${fails} FAIL` : '\nMINIMUM TEST ALL PASS');
 process.exit(fails ? 1 : 0);
