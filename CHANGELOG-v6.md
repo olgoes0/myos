@@ -263,3 +263,13 @@ Przycisk **„Przywróć kolory motywu”** kasuje Twoje ustawienia.
 - **Reguły Firebase:** dodano `shares/{klucz}` (odczyt dla każdego, kto zna klucz; zapis i usunięcie tylko właściciel; brak listowania). **Trzeba wkleić i opublikować nowe `firestore.rules`.**
 - Test: `testy/backup-test.js` (atrapa Firebase) – ALL PASS. Na prawdziwym Firebase jeszcze nie sprawdzone: odczyt linku bez logowania i reguły.
 - Wersja: `lifeos-v19` (sw.js).
+
+## v20 – minimum dnia z zakresem (tylko dziś / ten tydzień / na zawsze)
+- **Problem:** punkt minimum dodany w Ustawieniach działał wstecz, więc psuł serię za wcześniejsze dni, a usunięcie punktu z listy „kasowało” historię zaliczeń.
+- **Ustawienia → Minimum dnia:** przy dodawaniu wybierasz zakres: **tylko dziś**, **ten tydzień** albo **na zawsze**. Zmiana działa od dziś, więc wcześniejsze dni zostają bez zmian.
+- **Usuwanie** (✕ w Ustawieniach) pyta o zakres: **tylko dziś**, **ten tydzień** albo **na zawsze (od dziś)**. Dni przed dzisiejszym zostają.
+- **Dziś:** możesz dodać punkt **tylko na ten dzień** (pole „+ punkt tylko na ten dzień”) i ukryć dowolny punkt **tylko na ten dzień** (✕ przy punkcie). „↩ przywróć ukryte” cofa ukrycia na tym dniu.
+- Seria i statystyki liczą punkty obowiązujące danego dnia.
+- Stare punkty bez dat działają jak dotąd.
+- Test: `testy/minimum-test.js` – ALL PASS. Pozostałe testy – ALL PASS.
+- Wersja: `lifeos-v20` (sw.js).

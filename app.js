@@ -180,9 +180,55 @@ function setBlock(s, k, id, patch) {
 function flameIcon(size = 30) {
   return `<svg width="${size}" height="${Math.round(size * 1.25)}" viewBox="0 0 24 30" aria-hidden="true" style="flex:none"><defs><linearGradient id="flameG" x1="0" y1="1" x2="0" y2="0"><stop offset="0" stop-color="#ff5a1f"/><stop offset="0.6" stop-color="#ff9f1c"/><stop offset="1" stop-color="#ffd166"/></linearGradient></defs><path d="M12 1c1.2 4.2 6.5 7.4 6.5 14.2A6.5 6.5 0 0 1 5.5 15.2c0-3.2 1.7-5.2 3.1-6.8.3 2.1 1 3.5 2.3 4.2C10.4 7.6 10.9 4 12 1z" fill="url(#flameG)"/></svg>`;
 }
+// === MINIMUM DNIA (zakresy: tylko dziś / ten tydzień / na zawsze) ===
+// Punkt może mieć daty od–do (from/until). Bez dat = obowiązuje zawsze (stare dane zostają bez zmian).
+// Dzień może ukryć punkt (day.minOff) albo mieć punkt tylko na siebie (day.minExtra).
+// Zmiany w Ustawieniach działają od dziś, więc nie psują serii za wcześniejsze dni.
+const minActive = (m, s) => (!m.from || s >= m.from) && (!m.until || s <= m.until);
+const weekEnd = s => addDays(mondayOf(s), 6);
+function minFor(s) {
+  const d = data.days[s] || {}, off = d.minOff || {};
+  return data.minimum.filter(m => minActive(m, s) && !off[m.id]).concat(d.minExtra || []);
+}
 function dayComplete(s) {
-  const d = data.days[s];
-  return !!d && data.minimum.length > 0 && data.minimum.every(m => d.min && d.min[m.id]);
+  const d = data.days[s], list = minFor(s);
+  return !!d && list.length > 0 && list.every(m => d.min && d.min[m.id]);
+}
+// Dodanie z Ustawień: sc = 'day' | 'week' | 'all'
+function minAddScoped(label, sc) {
+  const t = todayISO();
+  if (sc === 'day') { const d = day(t); d.minExtra = (d.minExtra || []).concat([{ id: uid(), label }]); }
+  else if (sc === 'week') data.minimum.push({ id: uid(), label, from: t, until: weekEnd(t) });
+  else data.minimum.push({ id: uid(), label, from: t });
+  save(); render();
+}
+// Usunięcie z Ustawień: sc = 'day' | 'week' | 'all'. Historia dni przed dziś zostaje.
+function minRemoveScoped(id, sc) {
+  const t = todayISO(), d = day(t);
+  const extra = (d.minExtra || []).some(x => x.id === id);
+  if (extra) { d.minExtra = d.minExtra.filter(x => x.id !== id); }
+  else if (sc === 'day') { d.minOff = d.minOff || {}; d.minOff[id] = true; }
+  else if (sc === 'week') {
+    for (let x = t; x <= weekEnd(t); x = addDays(x, 1)) { const dd = day(x); dd.minOff = dd.minOff || {}; dd.minOff[id] = true; }
+  } else {
+    const m = byId(data.minimum, id);
+    if (m) {
+      if (m.from && m.from >= t) data.minimum = data.minimum.filter(x => x.id !== id);   // zaczynał się dziś – po prostu znika
+      else m.until = addDays(t, -1);                                                    // wcześniejsze dni zostają
+    }
+  }
+  save(); render();
+}
+// Punkt tylko na jeden dzień (z ekranu Dziś)
+function minDayAdd(s, label) {
+  const d = day(s); d.minExtra = (d.minExtra || []).concat([{ id: uid(), label }]); save(); render();
+}
+// Ukrycie punktu tylko na ten dzień (z ekranu Dziś)
+function minDayOff(s, id) {
+  const d = day(s);
+  if ((d.minExtra || []).some(x => x.id === id)) d.minExtra = d.minExtra.filter(x => x.id !== id);
+  else { d.minOff = d.minOff || {}; d.minOff[id] = true; }
+  save(); render();
 }
 function streaks() {
   let cur = 0;
@@ -489,7 +535,7 @@ function goalsCard(s) {
 function screenDzis() {
   const s = state.date, d = day(s), bl = blocksFor(s), st = streaks();
   const isToday = s === todayISO();
-  const mins = data.minimum;
+  const mins = minFor(s);
   const cnt = mins.filter(m => d.min[m.id]).length;
   const minDone = mins.length > 0 && cnt === mins.length;
   const gDone = d.goals.filter(g => g.done).length;
@@ -519,9 +565,13 @@ function screenDzis() {
 
   <div class="sec"><h2>✅ Minimum dnia</h2><small>edycja: Ustawienia</small></div>
   <div class="card">
-    ${mins.map(m => `<label class="item ${d.min[m.id] ? 'done' : ''}" style="cursor:pointer">
-      <input type="checkbox" data-chg="min" data-id="${m.id}" ${d.min[m.id] ? 'checked' : ''}>
-      <span class="t grow" style="font-size:18px">${esc(m.label)}</span></label>`).join('') || '<div class="hint">Brak punktów. Dodaj je w Ustawieniach.</div>'}
+    ${mins.map(m => `<div class="item ${d.min[m.id] ? 'done' : ''}">
+      <label class="grow" style="cursor:pointer;display:flex;align-items:center;gap:10px">
+        <input type="checkbox" data-chg="min" data-id="${m.id}" ${d.min[m.id] ? 'checked' : ''}>
+        <span class="t grow" style="font-size:18px">${esc(m.label)}${(d.minExtra || []).some(x => x.id === m.id) ? ' <small class="mut">(tylko ten dzień)</small>' : ''}</span></label>
+      <button class="x" data-act="minOffDay" data-s="${s}" data-id="${m.id}" aria-label="usuń na ten dzień">✕</button></div>`).join('') || '<div class="hint">Brak punktów minimum na ten dzień.</div>'}
+    <div class="addrow"><input id="dayMin" placeholder="+ punkt tylko na ten dzień"><button class="pri" data-act="minAddDay" data-s="${s}">Dodaj</button></div>
+    ${Object.keys(d.minOff || {}).length ? `<div class="row keep" style="margin-top:8px"><button class="link" data-act="minRestore" data-s="${s}">↩ przywróć ukryte punkty na ten dzień</button></div>` : ''}
   </div>
 
   <div class="sec"><h2>📋 Plan dnia</h2><small>${bl.filter(b => b.done).length}/${bl.length}</small></div>
@@ -2231,6 +2281,10 @@ function screenUstaw() {
     ${data.minimum.map(m => `<div class="item">
       <input class="gtxt grow" value="${esc(m.label)}" data-chg="minLabel" data-id="${m.id}" aria-label="punkt minimum">
       <button class="x" data-act="minDel" data-id="${m.id}" aria-label="usuń">✕</button></div>`).join('') || '<div class="hint">Brak punktów.</div>'}
+    <div class="pills" style="margin:6px 0">
+      <label class="pill"><input type="radio" name="minScope" value="day"> tylko dziś</label>
+      <label class="pill"><input type="radio" name="minScope" value="week"> ten tydzień</label>
+      <label class="pill"><input type="radio" name="minScope" value="all" checked> na zawsze</label></div>
     <div class="addrow"><input id="newMin" placeholder="+ nowy punkt minimum"><button class="pri" data-act="minAdd">Dodaj</button></div>
   </div>
 
@@ -2634,12 +2688,28 @@ const ACT = {
   minAdd: () => {
     const v = document.getElementById('newMin').value.trim();
     if (!v) return;
-    data.minimum.push({ id: uid(), label: v }); save(); render();
+    const r = document.querySelector('input[name="minScope"]:checked');
+    minAddScoped(v, r ? r.value : 'all');
   },
   minDel: el => {
-    if (!confirm('Usunąć ten punkt minimum? Historia dni zostaje.')) return;
-    data.minimum = data.minimum.filter(m => m.id !== el.dataset.id); save(); render();
+    const id = el.dataset.id;
+    openSheet(`<h2>Usunąć punkt minimum?</h2>
+      <div class="hint">Wybierz, od kiedy ma zniknąć. Dni przed dzisiejszym zostają bez zmian.</div>
+      <div class="foot">
+        <button class="danger full" data-act="minDelScope" data-id="${id}" data-scope="day">Tylko dziś</button>
+        <button class="danger full" data-act="minDelScope" data-id="${id}" data-scope="week">Ten tydzień</button>
+        <button class="danger full" data-act="minDelScope" data-id="${id}" data-scope="all">Na zawsze (od dziś)</button>
+        <button class="full" data-act="sheetClose">Anuluj</button>
+      </div>`);
   },
+  minDelScope: el => { closeSheet(); minRemoveScoped(el.dataset.id, el.dataset.scope); },
+  minAddDay: el => {
+    const inp = document.getElementById('dayMin'), v = ((inp && inp.value) || '').trim();
+    if (!v) return;
+    minDayAdd(el.dataset.s, v);
+  },
+  minOffDay: el => minDayOff(el.dataset.s, el.dataset.id),
+  minRestore: el => { const d = day(el.dataset.s); delete d.minOff; save(); render(); },
 
   bkNow: () => { bkMake('ręczna'); render(); alert('Zrobiono kopię.'); },
   bkRestore: el => bkRestore(el.dataset.src, +el.dataset.ts),

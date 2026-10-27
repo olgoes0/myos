@@ -1,7 +1,7 @@
 // === SERVICE WORKER: działanie offline ===
 // Strategia "najpierw sieć, potem cache" – po każdej zmianie w kodzie apka od razu pobiera nową wersję,
 // a offline korzysta z ostatniej zapamiętanej.
-const CACHE = 'lifeos-v19';
+const CACHE = 'lifeos-v20';
 const FILES = ['./', './index.html', './app.js', './produkty.js', './manifest.json', './icon.svg', './icon-192.png', './icon-512.png', './firebase-config.js'];
 
 self.addEventListener('install', e => {
