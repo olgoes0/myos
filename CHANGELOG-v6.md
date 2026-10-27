@@ -273,3 +273,18 @@ Przycisk **„Przywróć kolory motywu”** kasuje Twoje ustawienia.
 - Stare punkty bez dat działają jak dotąd.
 - Test: `testy/minimum-test.js` – ALL PASS. Pozostałe testy – ALL PASS.
 - Wersja: `lifeos-v20` (sw.js).
+- **Poprawka v20 (po teście):** lista punktów w Ustawieniach pokazuje tylko punkty aktywne od dziś. Punkt usunięty „na zawsze” znika z listy, a jego historia zostaje. Punkt ukryty na dziś ma podpis „ukryty dziś”.
+
+## v21 – minimum dnia po tygodniach + zakresy usuwania
+- **Ustawienia → Minimum dnia** to teraz widok tygodnia ze strzałkami ‹ › (jak w Tygodniu). Dopisujesz punkty do wybranego tygodnia: „tylko ten tydzień” albo „od tego tygodnia na stałe”. Np. pod koniec tygodnia ustawiasz następny.
+- **✕ przy punkcie** daje cztery wybory:
+  - **Tylko jeden dzień** tego tygodnia (Pn–Nd),
+  - **Cały ten tydzień**,
+  - **Od dziś na zawsze** (historia przed dziś zostaje),
+  - **Całkowicie** (z całej przeszłości i przyszłości; to też kasuje zaliczenia tego punktu w historii, po potwierdzeniu).
+- **Przywróć dni tego tygodnia** cofa ukrycia dla danego punktu.
+- Pod punktem widać „bez: Śr, Cz”, gdy jakieś dni są wyłączone.
+- W bieżącym tygodniu lista pokazuje punkty aktywne od dziś; w minionych tygodniach – historię tygodnia.
+- Ekran Dziś jak w v20: punkt tylko na dziś i ukrywanie na jeden dzień.
+- Test: `testy/minimum-test.js` – ALL PASS (z nowymi testami tygodni i usuwania). Pozostałe testy – ALL PASS.
+- Wersja: `lifeos-v21` (sw.js).

@@ -76,6 +76,47 @@ const shortId = D.run(`data.minimum.find(m => m.label === 'krótki').id`);
 D.run(`minRemoveScoped('${shortId}', 'all')`);
 ok(D.run(`data.minimum.some(m => m.id === '${shortId}')`) === false, 'dodany i od razu usunięty: znika z listy');
 
+// 7b) Ustawienia pokazują tylko punkty aktywne od dziś (usunięty „na zawsze” znika z listy)
+const settingsHtml = D.run('screenUstaw()');
+ok(!settingsHtml.includes(`data-id="${base[2]}"`), 'Ustawienia: punkt usunięty „na zawsze” nie jest już na liście');
+ok(settingsHtml.includes(`data-id="${base[0]}"`), 'Ustawienia: punkt nadal aktywny jest na liście');
+ok(D.run(`(data.minimum.find(m => m.id === '${base[2]}') || {}).until`) === Y, 'Ustawienia: punkt „na zawsze” ma koniec wczoraj (historia zostaje)');
+
+// 7c) Dopisanie do wybranego tygodnia (od poniedziałku do niedzieli)
+const NEXT_WEEK_MON = D.run('addDays(mondayOf(todayISO()), 7)');
+const NEXT_WEEK_SUN = D.run('weekEnd(addDays(mondayOf(todayISO()), 7))');
+D.run(`minAddWeek('tydzień B', '${NEXT_WEEK_MON}', false)`);
+const wbId = D.run(`data.minimum.find(m => m.label === 'tydzień B').id`);
+ok(D.run(`minFor('${NEXT_WEEK_MON}').some(m => m.id === '${wbId}')`) === true, 'tydzień: punkt widoczny w poniedziałek wybranego tygodnia');
+ok(D.run(`minFor('${NEXT_WEEK_SUN}').some(m => m.id === '${wbId}')`) === true, 'tydzień: punkt widoczny w niedzielę wybranego tygodnia');
+ok(D.run(`minFor('${D.run(`addDays('${NEXT_WEEK_SUN}', 1)`)}').some(m => m.id === '${wbId}')`) === false, 'tydzień: po niedzieli punkt znika');
+ok(D.run(`minFor('${T}').some(m => m.id === '${wbId}')`) === false, 'tydzień: w tym tygodniu punktu nie ma');
+
+// 7d) Usunięcie jednego dnia w wybranym tygodniu (z Ustawień)
+D.run(`minHideDay('${wbId}', '${NEXT_WEEK_MON}')`);
+ok(D.run(`minFor('${NEXT_WEEK_MON}').some(m => m.id === '${wbId}')`) === false, 'jeden dzień: w wybrany dzień punkt znika');
+ok(D.run(`minFor('${D.run(`addDays('${NEXT_WEEK_MON}', 1)`)}').some(m => m.id === '${wbId}')`) === true, 'jeden dzień: w inne dni tygodnia punkt zostaje');
+ok(D.run(`(data.minimum.find(m => m.id === '${wbId}'))`) !== undefined, 'jeden dzień: punkt nadal istnieje w tygodniu');
+D.run(`minRestoreWeek('${wbId}', '${NEXT_WEEK_MON}')`);
+ok(D.run(`minFor('${NEXT_WEEK_MON}').some(m => m.id === '${wbId}')`) === true, 'przywróć dni: punkt wraca w poniedziałek');
+
+// 7e) Cały tydzień
+D.run(`minHideWeek('${wbId}', '${NEXT_WEEK_MON}')`);
+ok(D.run(`minFor('${NEXT_WEEK_SUN}').some(m => m.id === '${wbId}')`) === false, 'cały tydzień: w żaden dzień tygodnia punktu nie ma');
+D.run(`minRestoreWeek('${wbId}', '${NEXT_WEEK_MON}')`);
+
+// 7f) Całkowite usunięcie: z listy i z historii (także zaliczenia)
+D.run(`day('${Y}').min['${base[0]}'] = true`);
+D.run(`minDeleteAll('${base[0]}')`);
+ok(D.run(`data.minimum.some(m => m.id === '${base[0]}')`) === false, 'całkowicie: punkt zniknął z listy');
+ok(D.run(`Object.values(data.days).every(d => !(d.min && d.min['${base[0]}']) && !(d.minOff && d.minOff['${base[0]}']))`) === true, 'całkowicie: zniknął też z historii dni');
+ok(D.run(`screenUstaw().includes('data-id="${base[0]}"')`) === false, 'całkowicie: nie ma go w Ustawieniach');
+
+// 7g) Widok tygodnia w Ustawieniach
+D.run(`state.minWeek = '${NEXT_WEEK_MON}'`);
+ok(D.run('screenUstaw()').includes('tydzień B'), 'widok tygodnia: w przyszłym tygodniu widać jego punkty');
+D.run(`state.minWeek = null`);
+
 // 8) Stare dane bez dat dalej działają jak dawniej (punkty bez from/until)
 ok(D.run(`data.minimum.filter(m => !m.from && !m.until).length`) >= 1, 'stare punkty bez dat nadal obowiązują');
 
