@@ -288,3 +288,5 @@ Przycisk **„Przywróć kolory motywu”** kasuje Twoje ustawienia.
 - Ekran Dziś jak w v20: punkt tylko na dziś i ukrywanie na jeden dzień.
 - Test: `testy/minimum-test.js` – ALL PASS (z nowymi testami tygodni i usuwania). Pozostałe testy – ALL PASS.
 - Wersja: `lifeos-v21` (sw.js).
+- **Przyciski dni przy punkcie (v21, poprawka):** zamiast tekstu „bez: Śr, Cz” każdy punkt ma przyciski Pn–Nd. Kliknięcie wyłącza dzień (przycisk przekreślony), drugie kliknięcie włącza go z powrotem. Dni spoza zakresu punktu są nieaktywne.
+- Test przełącznika dnia dodany do `testy/minimum-test.js` – ALL PASS.

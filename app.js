@@ -235,6 +235,12 @@ function minHideWeek(id, mon) {
   }
   save(); render();
 }
+// Przywrócenie punktu na jeden dzień (drugie kliknięcie w przycisk dnia)
+function minRestoreDay(id, s) {
+  const d = data.days[s];
+  if (d && d.minOff) { delete d.minOff[id]; if (!Object.keys(d.minOff).length) delete d.minOff; }
+  save(); render();
+}
 // Przywrócenie ukrytych dni tygodnia dla punktu
 function minRestoreWeek(id, mon) {
   for (let i = 0; i < 7; i++) {
@@ -269,12 +275,19 @@ function minSettingsCard() {
   const t0 = todayISO(), lo = sun < t0 ? mon : (mon > t0 ? mon : t0);
   const list = data.minimum.filter(m => (!m.from || m.from <= sun) && (!m.until || m.until >= lo));
   const items = list.map(m => {
-    const off = [];
-    for (let i = 0; i < 7; i++) if (((data.days[addDays(mon, i)] || {}).minOff || {})[m.id]) off.push(DNI[i]);
-    return `<div class="item">
+    // przyciski dni: kliknięcie wyłącza dzień, drugie kliknięcie włącza go z powrotem
+    const chips = [0, 1, 2, 3, 4, 5, 6].map(i => {
+      const x = addDays(mon, i), off = !!((data.days[x] || {}).minOff || {})[m.id], act = minActive(m, x);
+      const on = act && !off;
+      return `<button data-act="minDayToggle" data-id="${m.id}" data-s="${x}" ${act ? '' : 'disabled'}
+        style="min-width:44px;padding:6px 8px;border-radius:999px;border:1px solid var(--line2);cursor:${act ? 'pointer' : 'default'};
+        background:${on ? 'var(--acc)' : 'var(--card2)'};color:${on ? 'var(--accTxt)' : 'var(--mut)'};
+        ${on ? '' : 'text-decoration:line-through;opacity:.6;'}">${DNI[i]}</button>`;
+    }).join(' ');
+    return `<div class="item" style="flex-wrap:wrap">
       <input class="gtxt grow" value="${esc(m.label)}" data-chg="minLabel" data-id="${m.id}" aria-label="punkt minimum">
-      ${off.length ? `<small class="mut">bez: ${off.join(', ')}</small>` : ''}
-      <button class="x" data-act="minDel" data-id="${m.id}" aria-label="usuń">✕</button></div>`;
+      <button class="x" data-act="minDel" data-id="${m.id}" aria-label="usuń">✕</button>
+      <div class="row keep" style="gap:6px;flex-wrap:wrap;width:100%;margin-top:6px">${chips}</div></div>`;
   }).join('');
   return `<div class="sec"><h2>✅ Minimum dnia</h2><small>punkty do streaka</small></div>
   <div class="card">
@@ -2774,6 +2787,10 @@ const ACT = {
         <button class="danger full" data-act="minDelAll" data-id="${id}">Całkowicie (cała przeszłość i przyszłość)</button>
         <button class="full" data-act="sheetClose">Anuluj</button>
       </div>`);
+  },
+  minDayToggle: el => {
+    const { id, s: d } = el.dataset, rec = data.days[d] || {};
+    if ((rec.minOff || {})[id]) minRestoreDay(id, d); else minHideDay(id, d);
   },
   minDelDay: el => { closeSheet(); minHideDay(el.dataset.id, el.dataset.s); },
   minDelWeek: el => { closeSheet(); minHideWeek(el.dataset.id, el.dataset.s); },

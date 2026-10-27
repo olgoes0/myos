@@ -112,6 +112,13 @@ ok(D.run(`data.minimum.some(m => m.id === '${base[0]}')`) === false, 'całkowici
 ok(D.run(`Object.values(data.days).every(d => !(d.min && d.min['${base[0]}']) && !(d.minOff && d.minOff['${base[0]}']))`) === true, 'całkowicie: zniknął też z historii dni');
 ok(D.run(`screenUstaw().includes('data-id="${base[0]}"')`) === false, 'całkowicie: nie ma go w Ustawieniach');
 
+// 7f2) Przełącznik dnia w Ustawieniach: pierwsze kliknięcie wyłącza, drugie włącza z powrotem
+D.run(`ACT.minDayToggle({dataset:{id:'${wbId}', s:'${NEXT_WEEK_MON}'}})`);
+ok(D.run(`minFor('${NEXT_WEEK_MON}').some(m => m.id === '${wbId}')`) === false, 'przełącznik: pierwsze kliknięcie wyłącza dzień');
+D.run(`ACT.minDayToggle({dataset:{id:'${wbId}', s:'${NEXT_WEEK_MON}'}})`);
+ok(D.run(`minFor('${NEXT_WEEK_MON}').some(m => m.id === '${wbId}')`) === true, 'przełącznik: drugie kliknięcie włącza dzień z powrotem');
+ok(D.run(`screenUstaw().includes('data-act="minDayToggle"')`) === true, 'przełącznik: przyciski dni są w Ustawieniach');
+
 // 7g) Widok tygodnia w Ustawieniach
 D.run(`state.minWeek = '${NEXT_WEEK_MON}'`);
 ok(D.run('screenUstaw()').includes('tydzień B'), 'widok tygodnia: w przyszłym tygodniu widać jego punkty');
