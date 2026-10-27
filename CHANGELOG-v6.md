@@ -290,3 +290,6 @@ Przycisk **„Przywróć kolory motywu”** kasuje Twoje ustawienia.
 - Wersja: `lifeos-v21` (sw.js).
 - **Przyciski dni przy punkcie (v21, poprawka):** zamiast tekstu „bez: Śr, Cz” każdy punkt ma przyciski Pn–Nd. Kliknięcie wyłącza dzień (przycisk przekreślony), drugie kliknięcie włącza go z powrotem. Dni spoza zakresu punktu są nieaktywne.
 - Test przełącznika dnia dodany do `testy/minimum-test.js` – ALL PASS.
+- **Poprawka (v21):** okno ✕ przy punkcie pokazuje przyciski dni i zostaje otwarte. Kliknięcie dnia wyłącza go, kolejne kliknięcie włącza z powrotem. Te same przyciski są też na karcie punktu w Ustawieniach.
+- **Nowa opcja dodawania: „w zaznaczonych tygodniach”.** Zaznaczasz kilka tygodni (checkboxy) i punkt trafia do każdego z nich.
+- Testy: `minimum-test.js` – ALL PASS (z testami okna i wielu tygodni).

@@ -267,6 +267,22 @@ function minAddWeek(label, mon, perm) {
   data.minimum.push(m);
   save(); render();
 }
+// Przyciski dni dla punktu (Ustawienia i okno ✕): kliknięcie wyłącza, drugie kliknięcie włącza z powrotem
+function minChips(m, mon) {
+  return [0, 1, 2, 3, 4, 5, 6].map(i => {
+    const x = addDays(mon, i), rec = data.days[x] || {};
+    const off = !!(rec.minOff || {})[m.id], act = minActive(m, x), on = act && !off;
+    return `<button data-act="minDayToggle" data-id="${m.id}" data-s="${x}" ${act ? '' : 'disabled'}
+      style="min-width:44px;padding:6px 8px;border-radius:999px;border:1px solid var(--line2);cursor:${act ? 'pointer' : 'default'};
+      background:${on ? 'var(--acc)' : 'var(--card2)'};color:${on ? 'var(--accTxt)' : 'var(--mut)'};
+      ${on ? '' : 'text-decoration:line-through;opacity:.6;'}">${DNI[i]}</button>`;
+  }).join(' ');
+}
+// Dopisanie punktu do kilku tygodni naraz (wybrane poniedziałki)
+function minAddMulti(label, mons) {
+  for (const mon of mons) data.minimum.push({ id: uid(), label, from: mon, until: addDays(mon, 6) });
+  save(); render();
+}
 // Karta „Minimum dnia” w Ustawieniach – widok tygodnia z przełącznikiem ‹ ›
 function minSettingsCard() {
   const mon = state.minWeek || mondayOf(todayISO()), sun = addDays(mon, 6);
@@ -274,21 +290,10 @@ function minSettingsCard() {
   // W bieżącym tygodniu pokazujemy punkty aktywne od dziś; w minionych – historię tygodnia
   const t0 = todayISO(), lo = sun < t0 ? mon : (mon > t0 ? mon : t0);
   const list = data.minimum.filter(m => (!m.from || m.from <= sun) && (!m.until || m.until >= lo));
-  const items = list.map(m => {
-    // przyciski dni: kliknięcie wyłącza dzień, drugie kliknięcie włącza go z powrotem
-    const chips = [0, 1, 2, 3, 4, 5, 6].map(i => {
-      const x = addDays(mon, i), off = !!((data.days[x] || {}).minOff || {})[m.id], act = minActive(m, x);
-      const on = act && !off;
-      return `<button data-act="minDayToggle" data-id="${m.id}" data-s="${x}" ${act ? '' : 'disabled'}
-        style="min-width:44px;padding:6px 8px;border-radius:999px;border:1px solid var(--line2);cursor:${act ? 'pointer' : 'default'};
-        background:${on ? 'var(--acc)' : 'var(--card2)'};color:${on ? 'var(--accTxt)' : 'var(--mut)'};
-        ${on ? '' : 'text-decoration:line-through;opacity:.6;'}">${DNI[i]}</button>`;
-    }).join(' ');
-    return `<div class="item" style="flex-wrap:wrap">
+  const items = list.map(m => `<div class="item" style="flex-wrap:wrap">
       <input class="gtxt grow" value="${esc(m.label)}" data-chg="minLabel" data-id="${m.id}" aria-label="punkt minimum">
       <button class="x" data-act="minDel" data-id="${m.id}" aria-label="usuń">✕</button>
-      <div class="row keep" style="gap:6px;flex-wrap:wrap;width:100%;margin-top:6px">${chips}</div></div>`;
-  }).join('');
+      <div class="row keep" style="gap:6px;flex-wrap:wrap;width:100%;margin-top:6px">${minChips(m, mon)}</div></div>`).join('');
   return `<div class="sec"><h2>✅ Minimum dnia</h2><small>punkty do streaka</small></div>
   <div class="card">
     <div class="datebar">
@@ -301,7 +306,11 @@ function minSettingsCard() {
     ${items || '<div class="hint">Na ten tydzień nie ma punktów minimum.</div>'}
     <div class="pills" style="margin:8px 0">
       <label class="pill"><input type="radio" name="minScope" value="week" checked> tylko ten tydzień</label>
-      <label class="pill"><input type="radio" name="minScope" value="perm"> od tego tygodnia na stałe</label></div>
+      <label class="pill"><input type="radio" name="minScope" value="perm"> od tego tygodnia na stałe</label>
+      <label class="pill"><input type="radio" name="minScope" value="multi"> w zaznaczonych tygodniach</label></div>
+    <div class="row keep" style="gap:6px;flex-wrap:wrap;margin-bottom:8px">${[0, 1, 2, 3, 4, 5, 6, 7].map(k => {
+      const w = addDays(mon, 7 * k);
+      return `<label class="pill"><input type="checkbox" name="minWk" value="${w}" ${k === 0 ? 'checked' : ''}> ${shortDate(w)}–${shortDate(addDays(w, 6))}</label>`; }).join('')}</div>
     <div class="addrow"><input id="newMin" placeholder="+ nowy punkt minimum"><button class="pri" data-act="minAdd">Dodaj</button></div>
     <div class="hint">Punkty dopisujesz do wybranego tygodnia (np. pod koniec tygodnia na następny). Pojedyncze dni usuwasz w ✕.</div>
   </div>`;
@@ -2766,31 +2775,40 @@ const ACT = {
     const v = document.getElementById('newMin').value.trim();
     if (!v) return;
     const r = document.querySelector('input[name="minScope"]:checked');
-    minAddWeek(v, state.minWeek || mondayOf(todayISO()), !!(r && r.value === 'perm'));
+    const sc = r ? r.value : 'week';
+    const mon = state.minWeek || mondayOf(todayISO());
+    if (sc === 'multi') {
+      const ws = [...document.querySelectorAll('input[name="minWk"]:checked')].map(x => x.value);
+      if (!ws.length) return alert('Zaznacz co najmniej jeden tydzień.');
+      return minAddMulti(v, ws);
+    }
+    minAddWeek(v, mon, sc === 'perm');
   },
   minWeekShift: el => { state.minWeek = addDays(state.minWeek || mondayOf(todayISO()), 7 * +el.dataset.n); render(); },
   minWeekToday: () => { state.minWeek = mondayOf(todayISO()); render(); },
   minDel: el => {
     const id = el.dataset.id, mon = state.minWeek || mondayOf(todayISO());
+    const m = byId(data.minimum, id) || { id, label: '' };
+    state.minSheet = id;
     const past = mon < mondayOf(todayISO());
-    const dayBtns = [0, 1, 2, 3, 4, 5, 6].map(i => { const x = addDays(mon, i);
-      return `<button class="soft" data-act="minDelDay" data-id="${id}" data-s="${x}">${DNI[i]} ${shortDate(x)}</button>`; }).join(' ');
-    openSheet(`<h2>Usuń punkt minimum</h2>
+    openSheet(`<h2>${esc(m.label)}</h2>
       ${past ? '<div class="hint" style="color:#b45309">Ten tydzień już minął. Zmiana wpłynie na serie z tych dni.</div>' : ''}
-      <div class="hint">Wybierz zakres. Historia zostaje, chyba że wybierzesz „całkowicie”.</div>
-      <label>Tylko jeden dzień tego tygodnia</label>
-      <div class="pills">${dayBtns}</div>
+      <label>Dni tego tygodnia – kliknij, żeby wyłączyć; kliknij ponownie, żeby włączyć</label>
+      <div class="row keep" style="gap:6px;flex-wrap:wrap;margin:8px 0">${minChips(m, mon)}</div>
       <div class="foot">
-        <button class="full" data-act="minDelWeek" data-id="${id}" data-s="${mon}">Cały ten tydzień</button>
-        <button class="full" data-act="minRestoreWeek" data-id="${id}" data-s="${mon}">Przywróć dni tego tygodnia</button>
-        <button class="full" data-act="minDelScope" data-id="${id}">Od dziś na zawsze (historia zostaje)</button>
-        <button class="danger full" data-act="minDelAll" data-id="${id}">Całkowicie (cała przeszłość i przyszłość)</button>
-        <button class="full" data-act="sheetClose">Anuluj</button>
+        <button class="full" data-act="minDelWeek" data-id="${id}" data-s="${mon}">Wyłącz cały ten tydzień</button>
+        <button class="full" data-act="minRestoreWeek" data-id="${id}" data-s="${mon}">Włącz wszystkie dni tego tygodnia</button>
+        <button class="danger full" data-act="minDelScope" data-id="${id}">Usuń od dziś na zawsze (historia zostaje)</button>
+        <button class="danger full" data-act="minDelAll" data-id="${id}">Usuń całkowicie (cała przeszłość i przyszłość)</button>
+        <button class="full" data-act="sheetClose">Zamknij</button>
       </div>`);
   },
   minDayToggle: el => {
     const { id, s: d } = el.dataset, rec = data.days[d] || {};
     if ((rec.minOff || {})[id]) minRestoreDay(id, d); else minHideDay(id, d);
+    // okno ✕ zostaje otwarte i pokazuje nowy stan
+    const sheetOpen = !document.getElementById('sheet').classList.contains('hidden');
+    if (sheetOpen && state.minSheet === id) ACT.minDel({ dataset: { id } });
   },
   minDelDay: el => { closeSheet(); minHideDay(el.dataset.id, el.dataset.s); },
   minDelWeek: el => { closeSheet(); minHideWeek(el.dataset.id, el.dataset.s); },

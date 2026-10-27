@@ -119,6 +119,23 @@ D.run(`ACT.minDayToggle({dataset:{id:'${wbId}', s:'${NEXT_WEEK_MON}'}})`);
 ok(D.run(`minFor('${NEXT_WEEK_MON}').some(m => m.id === '${wbId}')`) === true, 'przełącznik: drugie kliknięcie włącza dzień z powrotem');
 ok(D.run(`screenUstaw().includes('data-act="minDayToggle"')`) === true, 'przełącznik: przyciski dni są w Ustawieniach');
 
+// 7h) Dodanie do kilku wybranych tygodni naraz
+const W3 = D.run('addDays(mondayOf(todayISO()), 21)'), W4 = D.run('addDays(mondayOf(todayISO()), 28)');
+D.run(`minAddMulti('wielotygodniowy', ['${W3}', '${W4}'])`);
+const mId = D.run(`data.minimum.find(m => m.label === 'wielotygodniowy').id`);
+ok(D.run(`minFor('${W3}').some(m => m.label === 'wielotygodniowy')`) === true, 'wiele tygodni: jest w 1. wybranym tygodniu');
+ok(D.run(`minFor('${W4}').some(m => m.label === 'wielotygodniowy')`) === true, 'wiele tygodni: jest w 2. wybranym tygodniu');
+ok(D.run(`minFor('${D.run(`addDays('${W3}', -7)`)}').some(m => m.label === 'wielotygodniowy')`) === false, 'wiele tygodni: w tygodniu nie wybranym punktu nie ma');
+
+// 7i) Okno ✕ zostaje otwarte po kliknięciu dnia i pokazuje stan
+D.run(`ACT.minDel({dataset:{id:'${mId}'}})`);
+ok(D.run(`document.getElementById('sheetBox').innerHTML.includes('minDayToggle')`) === true, 'okno ✕: pokazuje przyciski dni');
+D.run(`ACT.minDayToggle({dataset:{id:'${mId}', s:'${W3}'}})`);
+ok(D.run(`minFor('${W3}').some(m => m.id === '${mId}')`) === false, 'okno ✕: klik wyłącza dzień');
+ok(D.run(`document.getElementById('sheetBox').innerHTML.includes('minDayToggle')`) === true, 'okno ✕: po kliknięciu nadal otwarte');
+D.run(`ACT.minDayToggle({dataset:{id:'${mId}', s:'${W3}'}})`);
+ok(D.run(`minFor('${W3}').some(m => m.id === '${mId}')`) === true, 'okno ✕: drugi klik włącza dzień z powrotem');
+
 // 7g) Widok tygodnia w Ustawieniach
 D.run(`state.minWeek = '${NEXT_WEEK_MON}'`);
 ok(D.run('screenUstaw()').includes('tydzień B'), 'widok tygodnia: w przyszłym tygodniu widać jego punkty');
