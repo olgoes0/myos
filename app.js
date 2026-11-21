@@ -1,12 +1,14 @@
 // ============================================================
-// LIFE OS – v6
+// LIFE OS – v7
 // Sekcje oznaczone "// === NAZWA ===" – po nazwie możesz prosić o zmiany.
-// Ekrany: DZIŚ · TYDZIEŃ · KOSZ · CIAŁO · DIETA/SEN · BIZNES · KOMPAS · PRZEGLĄD · USTAWIENIA
+// Ekrany: DZIŚ · TYDZIEŃ · PRZYPOMNIENIA · KOSZ · CIAŁO · DIETA/SEN · BIZNES · KOMPAS · PRZEGLĄD · USTAWIENIA
 // ============================================================
 
 // === STAŁE ===
 const KEY = 'lifeos.v1';                       // ten sam klucz – dane z v1/v2 zostają
-const AREAS = {
+// Zachowujemy etykiety i kolory starych bloków, ale nie pokazujemy tych kategorii
+// jako gotowych wyborów. Nowe bloki korzystają z własnych kategorii użytkownika.
+const LEGACY_AREAS = {
   kosz:    { label: 'Kosz',        color: '#f97316' },
   cialo:   { label: 'Ciało',       color: '#ef4444' },
   biznes:  { label: 'Biznes',      color: '#3b82f6' },
@@ -15,11 +17,14 @@ const AREAS = {
   regen:   { label: 'Regeneracja', color: '#22c55e' },
   inne:    { label: 'Inne',        color: '#eab308' }
 };
+const DEFAULT_CATEGORIES = [{ id: 'training', label: 'Trening', color: '#8b5cf6' }];
+const TEMP_AREA_PREFIX = 'tmp:';
 const DNI = ['Pn', 'Wt', 'Śr', 'Cz', 'Pt', 'So', 'Nd'];                  // 0 = poniedziałek
 const DNI_LONG = ['Poniedziałek', 'Wtorek', 'Środa', 'Czwartek', 'Piątek', 'Sobota', 'Niedziela'];
 const BLOCKS_DRILL = ['rzut', 'finishing', 'drybling', 'passing', 'rozgrzewka', 'inne'];
 const DEFAULT_MIN = ['Bark 5 min', '50 rzutów w górę', 'Ghost 5 min'];
 const OLD_DEFAULT_DRILLS = ['25 pull-up po 1 koźle', '25 C&S 5 miejsc', '10 FT', '10 fadeaway'];
+const KOSZ_SCHEMA_VERSION = 1;
 const SKILLS = ['Rzut C&S', 'Rzut z kroku', 'Rzut za 3', 'Fadeaway', 'Łuk rzutu', 'Finishing z kontaktem', 'Handle P/L',
   'Balans', 'Nogi', 'Core', 'Bark', 'Obrona 1v1', 'Kondycja', 'Pewność'];
 const WORKOUTS = ['Siła A', 'Siła B', 'GOAT', 'Plyo/COD', 'Izometrie'];
@@ -43,8 +48,28 @@ const daysBetween = (a, b) => Math.round((parseISO(b) - parseISO(a)) / 86400000)
 const fmtDate = s => `${DNI[dow(s)]} ${s.slice(8)}.${s.slice(5, 7)}.${s.slice(0, 4)}`;
 const shortDate = s => `${s.slice(8)}.${s.slice(5, 7)}`;
 const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-const areaColor = a => (AREAS[a] || AREAS.inne).color;
-const areaLabel = a => (AREAS[a] || AREAS.inne).label;
+const normalizeCategoryName = v => String(v ?? '').trim().replace(/[łŁ]/g, 'l').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+const categoryById = id => (Array.isArray(data.categories) ? data.categories : []).find(c => c.id === id);
+const areaLabel = a => {
+  const key = String(a ?? '');
+  if (!key) return 'Bez kategorii';
+  if (key.startsWith(TEMP_AREA_PREFIX)) return key.slice(TEMP_AREA_PREFIX.length);
+  const category = categoryById(key);
+  return category ? category.label : (LEGACY_AREAS[key] ? LEGACY_AREAS[key].label : key);
+};
+const areaColor = a => {
+  const key = String(a ?? '');
+  if (!key) return '#94a3b8';
+  const category = categoryById(key);
+  if (category && category.color) return category.color;
+  if (LEGACY_AREAS[key]) return LEGACY_AREAS[key].color;
+  const colors = ['#8b5cf6', '#06b6d4', '#f59e0b', '#ec4899', '#14b8a6', '#6366f1', '#84cc16', '#f97316'];
+  let hash = 0;
+  for (const ch of areaLabel(key)) hash = ((hash * 31) + ch.charCodeAt(0)) | 0;
+  return colors[(hash >>> 0) % colors.length];
+};
+const isSchoolArea = a => normalizeCategoryName(areaLabel(a)) === 'szkola';
+const isTrainingArea = a => ['trening', 'cialo'].includes(normalizeCategoryName(areaLabel(a)));
 const pct = p => Math.round(p.made / p.att * 100);
 const fmtN = v => Number.isInteger(v) ? String(v) : (Math.round(v * 10) / 10).toString();
 const fmtT = s => `${pad(Math.floor(s / 60))}:${pad(s % 60)}`;
@@ -57,23 +82,84 @@ const sleepH = (bed, wake) => {
 };
 const byId = (arr, id) => (arr || []).find(x => x.id === id);
 
+function hasLegacyKoszData(obj) {
+  const hasItems = key => Array.isArray(obj && obj[key]) && obj[key].length > 0;
+  const drills = Array.isArray(obj && obj.drills) ? obj.drills : [];
+  const hasUserDrills = drills.length > 0 && JSON.stringify(drills) !== JSON.stringify(OLD_DEFAULT_DRILLS)
+    && drills.some(drill => !drill || !Array.isArray(drill.categoryIds));
+  const skills = Array.isArray(obj && obj.skills) ? obj.skills.map(x => x && x.name).filter(Boolean) : [];
+  const defaultSkills = skills.length === SKILLS.length && SKILLS.every((name, i) => skills[i] === name);
+  const hallBlocks = Array.isArray(obj && obj.template) && obj.template.some(x => x && x.hallId);
+  return ['shots', 'hala', 'logs', 'prios', 'diag'].some(hasItems)
+    || hasUserDrills || (skills.length > 0 && !defaultSkills) || hallBlocks;
+}
+function clearLegacyKoszData(target) {
+  const hallBlockIds = new Set((target.template || []).filter(x => x && x.hallId).map(x => x.id));
+  target.shots = [];
+  target.drills = (target.drills || []).filter(drill => drill && Array.isArray(drill.categoryIds));
+  target.hala = [];
+  target.logs = [];
+  target.prios = [];
+  target.skills = [];
+  target.diag = [];
+  target.template = (target.template || []).filter(x => !x || !x.hallId);
+  Object.values(target.days || {}).forEach(d => {
+    if (!d || !d.done) return;
+    hallBlockIds.forEach(id => delete d.done[id]);
+  });
+  target.koszSchemaVersion = KOSZ_SCHEMA_VERSION;
+  target.koszMigrationPending = false;
+  target.koszMigrationExportedAt = 0;
+  target.v = 7;
+  return target;
+}
+function normalizeKoszData(target, source = target) {
+  target.drillCategories = Array.isArray(target.drillCategories) ? target.drillCategories : [];
+  target.hallPlans = Array.isArray(target.hallPlans) ? target.hallPlans : [];
+  target.trainingJournal = Array.isArray(target.trainingJournal) ? target.trainingJournal : [];
+  target.drillJournal = Array.isArray(target.drillJournal) ? target.drillJournal : [];
+  const schema = Number(source && source.koszSchemaVersion) || 0;
+  if (schema < KOSZ_SCHEMA_VERSION) {
+    const pending = !!(source && source.koszMigrationPending) || hasLegacyKoszData(source || {});
+    if (pending) {
+      target.koszSchemaVersion = 0;
+      target.koszMigrationPending = true;
+      target.koszMigrationExportedAt = Number(source && source.koszMigrationExportedAt) || 0;
+    } else clearLegacyKoszData(target);
+  } else {
+    target.koszSchemaVersion = KOSZ_SCHEMA_VERSION;
+    target.koszMigrationPending = !!target.koszMigrationPending;
+    target.koszMigrationExportedAt = Number(target.koszMigrationExportedAt) || 0;
+  }
+  return target;
+}
+
 // === DANE ===
 // data.template = bloki stałe · data.days[YYYY-MM-DD] = {min, goals, done, extra, ev, routine, diet, health, biz}
-// kolekcje: drills, hala, workouts, sessions, routine, phys, injuries, logs, prios, skills, diag,
-//           ideas, lessons, books, plan90, wins, fears, weight, reviews
+// Kolekcje koszykówki: drillCategories, drills, hallPlans, trainingJournal, drillJournal.
+// Starsze koszykarskie kolekcje są eksportowane przed jednorazowym wyczyszczeniem.
 function DEFAULTS() {
   return {
-    v: 6,
+    v: 7,
+    koszSchemaVersion: KOSZ_SCHEMA_VERSION,
+    koszMigrationPending: false,
+    koszMigrationExportedAt: 0,
     template: [],
-    ui: { theme: 'jasny', acc: null, bg: null },
+    categories: DEFAULT_CATEGORIES.map(category => ({ ...category })),
+    ui: { theme: 'jasny', acc: null, acc2: null, bg: null },
     foods: DEFAULT_FOODS,
-    foodsV: 7,
+    foodsV: FOOD_SCHEMA_VERSION,
     profile: { sex: 'm', age: null, height: null, weight: null, activity: 1.55, surplus: 300, protG: 2, fatG: 0.9, waterMlKg: 35 },
     draft: null,
     days: {},
+    reminders: [],
     minimum: DEFAULT_MIN.map(label => ({ id: uid(), label })),
     shots: [],
     drills: [],
+    drillCategories: [],
+    hallPlans: [],
+    trainingJournal: [],
+    drillJournal: [],
     hala: [],
     workouts: WORKOUTS.map(name => ({ id: uid(), name, ex: '' })),
     sessions: [],
@@ -82,7 +168,7 @@ function DEFAULTS() {
     injuries: [],
     logs: [],
     prios: [],
-    skills: SKILLS.map(name => ({ id: uid(), name })),
+    skills: [],
     diag: [],
     ideas: [],
     lessons: [],
@@ -102,19 +188,18 @@ function load() {
     if (!raw) return DEFAULTS();
     const obj = JSON.parse(raw);
     const d = Object.assign(DEFAULTS(), obj);
+    if (!Array.isArray(d.categories)) d.categories = DEFAULT_CATEGORIES.map(category => ({ ...category }));
+    if (!Array.isArray(d.reminders)) d.reminders = [];
     // migracja: stare domyślne dryle -> pusta lista
     if (Array.isArray(obj.drills) && JSON.stringify(obj.drills) === JSON.stringify(OLD_DEFAULT_DRILLS)) d.drills = [];
     // migracja: dryle jako tekst -> obiekty
-    d.drills = (d.drills || []).map(x => typeof x === 'string'
+    d.drills = (Array.isArray(d.drills) ? d.drills : []).map(x => typeof x === 'string'
       ? { id: uid(), name: x, block: '', time: null, reps: '', link: '', works: '', note: '' } : x);
+    normalizeKoszData(d, obj);
     d.texts = Object.assign(DEFAULTS().texts, obj.texts || {});
-    // migracja: dopisz do bazy produkty z nowszej wersji (bez ruszania Twoich własnych)
-    if ((obj.foodsV || 0) < 7) {
-      const have = new Set((d.foods || []).map(f => f.name.toLowerCase()));
-      d.foods = [...(d.foods || []), ...FOOD_BASE.filter(f => !have.has(f[0].toLowerCase())).map(foodFrom)];
-      d.foodsV = 7;
-    }
-    d.v = 6;
+    // migracja: dodaj nowe produkty i popraw tylko pola ze starymi wartościami domyślnymi
+    migrateFoods(d, obj.foodsV);
+    d.v = 7;
     d.ui = Object.assign(DEFAULTS().ui, obj.ui || {});
     d.profile = Object.assign(DEFAULTS().profile, obj.profile || {});
     return d;
@@ -156,7 +241,7 @@ function blocksFor(s) {
     const o = done[t.id] || {};
     if (o.hidden) continue;
     // nadpisania „tylko ten dzień” (nazwa, obszar, godziny) – szablon zostaje bez zmian
-    out.push({ id: t.id, kind: 't', name: o.name || t.name, area: o.area || t.area,
+    out.push({ id: t.id, kind: 't', name: o.name || t.name, area: o.area ?? t.area,
                from: o.from ?? t.from ?? '', to: o.to ?? t.to ?? '',
                done: !!o.done, rating: o.rating || 0, note: o.note || '' });
   }
@@ -178,7 +263,17 @@ function setBlock(s, k, id, patch) {
 // === STREAK ===
 // Płomień jako grafika SVG (zamiast emoji, która wygląda różnie w systemach)
 function flameIcon(size = 30) {
-  return `<svg width="${size}" height="${Math.round(size * 1.25)}" viewBox="0 0 24 30" aria-hidden="true" style="flex:none"><defs><linearGradient id="flameG" x1="0" y1="1" x2="0" y2="0"><stop offset="0" stop-color="#ff5a1f"/><stop offset="0.6" stop-color="#ff9f1c"/><stop offset="1" stop-color="#ffd166"/></linearGradient></defs><path d="M12 1c1.2 4.2 6.5 7.4 6.5 14.2A6.5 6.5 0 0 1 5.5 15.2c0-3.2 1.7-5.2 3.1-6.8.3 2.1 1 3.5 2.3 4.2C10.4 7.6 10.9 4 12 1z" fill="url(#flameG)"/></svg>`;
+  const id = 'flame-' + uid();
+  return `<svg class="flame-icon" width="${size}" height="${Math.round(size * 1.2)}" viewBox="0 0 32 38" aria-hidden="true" focusable="false" style="flex:none">
+    <defs>
+      <linearGradient id="${id}-outer" x1="6" y1="35" x2="25" y2="3" gradientUnits="userSpaceOnUse"><stop stop-color="#ef476f"/><stop offset=".48" stop-color="#ff784f"/><stop offset="1" stop-color="#ffc857"/></linearGradient>
+      <linearGradient id="${id}-inner" x1="12" y1="34" x2="21" y2="19" gradientUnits="userSpaceOnUse"><stop stop-color="#fff1a8"/><stop offset="1" stop-color="#fffdf4"/></linearGradient>
+      <linearGradient id="${id}-spark" x1="9" y1="18" x2="15" y2="8" gradientUnits="userSpaceOnUse"><stop stop-color="#ffffff" stop-opacity=".12"/><stop offset="1" stop-color="#ffffff" stop-opacity=".78"/></linearGradient>
+    </defs>
+    <path d="M17.2 1.8c.5 5.7-2.6 8.3-2.1 12.6 1.8-1.5 2.8-3.5 3-6.1 5 4.2 9.2 9.5 9.2 16.1a11.4 11.4 0 0 1-22.8-.2c0-6.4 3.7-11.7 8.5-18.2.1 4.3 1.2 6.5 2.9 8.2.8-4.5 2.4-8 1.3-12.4Z" fill="url(#${id}-outer)"/>
+    <path d="M17.1 20.2c2.3 2 4.2 4.4 4.1 7.1a5.3 5.3 0 0 1-10.6.1c0-2.2 1.1-4.2 3.1-6.2.1 1.8.7 2.8 1.5 3.4.8-1.6 1.2-2.8 1.9-4.4Z" fill="url(#${id}-inner)"/>
+    <path d="M10.5 20.8c.1-3.3 1.3-5.8 3.6-8.7-.1 3.8.5 6.1 2.1 7.7" fill="none" stroke="url(#${id}-spark)" stroke-width="1.5" stroke-linecap="round"/>
+  </svg>`;
 }
 // === MINIMUM DNIA (zakresy: tylko dziś / ten tydzień / na zawsze) ===
 // Punkt może mieć daty od–do (from/until). Bez dat = obowiązuje zawsze (stare dane zostają bez zmian).
@@ -192,7 +287,15 @@ function minFor(s) {
 }
 function dayComplete(s) {
   const d = data.days[s], list = minFor(s);
-  return !!d && list.length > 0 && list.every(m => d.min && d.min[m.id]);
+  return !!d && (!!d.manualComplete || (list.length > 0 && list.every(m => d.min && d.min[m.id])));
+}
+function dayManualButton(s) {
+  const d = data.days[s] || {}, manual = !!d.manualComplete, complete = dayComplete(s), future = s > todayISO();
+  const disabled = (future && !manual) || (complete && !manual);
+  const label = manual ? '✓ Dzień zaliczony ręcznie · cofnij'
+    : future ? 'Dostępne po zakończeniu dnia'
+      : complete ? '✓ Dzień zaliczony z minimum' : '✓ Zalicz dzień';
+  return `<button class="day-complete ${manual ? 'is-manual' : (complete ? 'is-done' : '')}" data-act="dayManual" data-s="${s}" aria-pressed="${manual || complete}" ${disabled ? 'disabled' : ''}>${label}</button>`;
 }
 // Dodanie z Ustawień: sc = 'day' | 'week' | 'all'
 function minAddScoped(label, sc) {
@@ -429,31 +532,43 @@ function alarm() {
 }
 
 // === UI POMOCNICZE ===
-function rateSelect(v) {
-  return `<select name="rating">${[0, 1, 2, 3, 4, 5].map(n =>
-    `<option value="${n}" ${n == v ? 'selected' : ''}>${n ? n + ' / 5' : 'bez oceny'}</option>`).join('')}</select>`;
-}
 function areaSelect(a) {
-  return `<select name="area">${Object.entries(AREAS).map(([k, v]) =>
-    `<option value="${k}" ${k === (a || 'inne') ? 'selected' : ''}>${v.label}</option>`).join('')}</select>`;
+  const categories = (Array.isArray(data.categories) ? data.categories : []).filter(c => c && c.id && c.label);
+  const options = [
+    '<option value="">— bez kategorii —</option>',
+    ...categories.map(c => `<option value="${esc(c.id)}" ${c.id === a ? 'selected' : ''}>${esc(c.label)}</option>`)
+  ];
+  if (a && !categories.some(c => c.id === a)) {
+    const temp = String(a).startsWith(TEMP_AREA_PREFIX);
+    options.push(`<option value="${esc(a)}" selected>${esc(areaLabel(a))}${temp ? ' · tylko ta aktywność' : ' · zachowana w tym bloku'}</option>`);
+  }
+  return `<select name="area">${options.join('')}</select>
+    <input type="text" name="newCategory" placeholder="Nazwa nowej kategorii" autocomplete="off" style="margin-top:8px">
+    <div class="category-add-actions">
+      <button type="button" data-act="categoryAdd" data-mode="permanent">＋ Dodaj na stałe</button>
+      <button type="button" data-act="categoryAdd" data-mode="temporary">＋ Tylko ta aktywność</button>
+    </div>
+    <div class="hint">Stała kategoria będzie dostępna przy kolejnych blokach. Tymczasowa zostanie tylko w tym bloku.</div>`;
 }
 function blockRow(s, b) {
   return `<div class="blk ${b.done ? 'done' : ''}" style="border-left-color:${areaColor(b.area)}">
     <input type="checkbox" data-chg="bdone" data-s="${s}" data-k="${b.kind}" data-id="${b.id}" ${b.done ? 'checked' : ''} aria-label="zrobione">
     <div class="grow" data-act="blockOpen" data-s="${s}" data-k="${b.kind}" data-id="${b.id}" style="cursor:pointer">
-      <div class="meta">${tm(b)} · ${areaLabel(b.area)}</div>
+      <div class="meta">${tm(b)} · ${esc(areaLabel(b.area))}</div>
       <div class="name">${esc(b.name)}</div>
     </div>
-    <select data-chg="brate" data-s="${s}" data-k="${b.kind}" data-id="${b.id}" aria-label="ocena">
-      ${[0, 1, 2, 3, 4, 5].map(n => `<option value="${n}" ${n == b.rating ? 'selected' : ''}>${n ? n + '★' : '—'}</option>`).join('')}
-    </select>
   </div>`;
 }
 function openSheet(html) {
+  if (typeof releaseDrillVideoObjectUrl === 'function') releaseDrillVideoObjectUrl();
   document.getElementById('sheetBox').innerHTML = html;
   document.getElementById('sheet').classList.remove('hidden');
 }
-function closeSheet() { document.getElementById('sheet').classList.add('hidden'); }
+function closeSheet() {
+  if (typeof releaseDrillVideoObjectUrl === 'function') releaseDrillVideoObjectUrl();
+  if (typeof state !== 'undefined') state.activeDrillDetailId = null;
+  document.getElementById('sheet').classList.add('hidden');
+}
 function tabs(screen, list) {
   const cur = state.sub[screen];
   return `<div class="tabs">${list.map(([v, l]) =>
@@ -619,7 +734,7 @@ function hallEnd(h) {
 }
 function syncHall(h) {
   let t = data.template.find(x => x.hallId === h.id);
-  if (!t) { t = { id: uid(), hallId: h.id, area: 'kosz', days: [] }; data.template.push(t); }
+  if (!t) { t = { id: uid(), hallId: h.id, area: 'training', days: [] }; data.template.push(t); }
   Object.assign(t, { name: h.name || 'Hala', from: h.from || '', to: hallEnd(h), days: [parseInt(h.dow, 10) || 0] });
 }
 function unsyncHall(hid) { data.template = data.template.filter(x => x.hallId !== hid); }
@@ -679,7 +794,10 @@ function screenDzis() {
   const mins = minFor(s);
   const cnt = mins.filter(m => d.min[m.id]).length;
   const minDone = mins.length > 0 && cnt === mins.length;
+  const manualDone = !!d.manualComplete;
   const gDone = d.goals.filter(g => g.done).length;
+  const doneBlocks = bl.filter(b => b.done).length;
+  const planPct = bl.length ? Math.round(doneBlocks / bl.length * 100) : 0;
   const hidden = Object.values(d.done).filter(o => o.hidden).length;
   const T = data.texts, ev = d.ev, tom = addDays(s, 1);
   return `
@@ -693,18 +811,42 @@ function screenDzis() {
     <button class="ic" data-act="dayShift" data-n="1" aria-label="następny dzień">›</button>
   </div>
 
+  <div class="day-summary card">
+    <div class="summary-top">
+      <div><div class="summary-kicker">${isToday ? 'NAJWAŻNIEJSZE NA DZIŚ' : 'PODSUMOWANIE DNIA'}</div>
+        <div class="summary-title">${bl.length ? `${doneBlocks} z ${bl.length} bloków wykonane` : 'Zaplanuj pierwszy krok'}</div>
+        <div class="mut">${planPct === 100 && bl.length ? 'Plan dnia zrealizowany — dobra robota.' : 'Mały krok też przesuwa Cię do przodu.'}</div></div>
+      <div class="summary-pct">${planPct}<span>%</span></div>
+    </div>
+    <div class="day-progress-track" role="progressbar" aria-label="Postęp planu dnia" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${planPct}"><i style="--progress:${planPct}%"></i></div>
+    <div class="summary-bottom">
+      <div class="summary-metrics"><div><b>${gDone}/${d.goals.length}</b><span>Cele</span></div><div><b>${doneBlocks}/${bl.length}</b><span>Bloki</span></div></div>
+      <div class="summary-actions"><button class="pri" data-act="extraNew" data-s="${s}">＋ Blok</button><button data-act="reminderQuick">＋ Przypomnienie</button></div>
+    </div>
+  </div>
+  <nav class="day-jumps" aria-label="Szybkie przejście do sekcji">
+    <button data-act="jumpTo" data-target="goalsSection"><span>01</span>Cele</button>
+    <button data-act="jumpTo" data-target="minimumSection"><span>02</span>Minimum</button>
+    <button data-act="jumpTo" data-target="planSection"><span>03</span>Plan</button>
+    <button data-act="jumpTo" data-target="eveningSection"><span>04</span>Wieczór</button>
+  </nav>
+
   <div class="hero">
     <div><div class="mut">Seria dni z rzędu</div>
       <div class="row keep" style="gap:10px;align-items:center">${flameIcon(34)}<span class="streak" style="font-size:44px">${st.cur}</span></div>
-      <div class="mut">${minDone ? 'dziś zaliczone ✔' : (mins.length ? `dziś brakuje ${mins.length - cnt} do +1` : 'dodaj punkty minimum w Ustawieniach')} · najdłuższa: ${st.best}</div></div>
+      <div class="mut">${manualDone ? 'dzień zaliczony ręcznie ✔' : (minDone ? 'minimum zaliczone ✔' : (mins.length ? `brakuje ${mins.length - cnt} punktów minimum do +1` : 'dodaj punkty minimum w Ustawieniach'))} · najdłuższa: ${st.best}</div></div>
     <div class="minbox ${minDone ? 'ok' : ''}"><div class="mut">Minimum</div><div class="big">${cnt} / ${mins.length}</div>
-      <div class="mut">${minDone ? '✔ dzień zaliczony' : 'zrób wszystko, żeby zaliczyć'}</div></div>
+      <div class="mut">${minDone ? '✔ minimum zrobione' : 'zrób wszystko, żeby zaliczyć automatycznie'}</div></div>
+  </div>
+  <div class="manual-day-wrap">
+    ${dayManualButton(s)}
+    <div class="hint">Możesz ręcznie zaliczyć dzień, jeśli plan się zmienił, ale zrobiłeś to, co było dla Ciebie ważne.</div>
   </div>
 
-  <div class="sec"><h2>🎯 Cele na dziś</h2><small>${gDone}/${d.goals.length} zrobione</small></div>
+  <div class="sec" id="goalsSection"><h2>🎯 Cele na dziś</h2><small>${gDone}/${d.goals.length} zrobione</small></div>
   ${goalsCard(s)}
 
-  <div class="sec"><h2>✅ Minimum dnia</h2><small>edycja: Ustawienia</small></div>
+  <div class="sec" id="minimumSection"><h2>✅ Minimum dnia</h2><small>edycja: Ustawienia</small></div>
   <div class="card">
     ${mins.map(m => `<div class="item ${d.min[m.id] ? 'done' : ''}">
       <label class="grow" style="cursor:pointer;display:flex;align-items:center;gap:10px">
@@ -714,7 +856,7 @@ function screenDzis() {
     ${Object.keys(d.minOff || {}).length ? `<div class="row keep" style="margin-top:8px"><button class="link" data-act="minRestore" data-s="${s}">↩ przywróć ukryte punkty na ten dzień</button></div>` : ''}
   </div>
 
-  <div class="sec"><h2>📋 Plan dnia</h2><small>${bl.filter(b => b.done).length}/${bl.length}</small></div>
+  <div class="sec" id="planSection"><h2>📋 Plan dnia</h2><small>${doneBlocks}/${bl.length}</small></div>
   <div class="card">
     ${bl.length ? bl.map(b => blockRow(s, b)).join('') : '<div class="hint">Brak bloków na ten dzień. Dodaj stałe w TYDZIEŃ albo jednorazowy poniżej.</div>'}
     <div class="row keep" style="margin-top:10px;flex-wrap:wrap;gap:8px">
@@ -732,8 +874,13 @@ function screenDzis() {
     <div class="kv"><div class="k">Zasada dnia</div><div>${T.rule ? esc(T.rule) : '<span class="mut">uzupełnij w KOMPAS</span>'}</div></div>
   </details>
 
-  <div class="sec"><h2>🌙 Wieczór</h2><small>${s}</small></div>
+  <div class="sec" id="eveningSection"><h2>🌙 Wieczór</h2><small>${s}</small></div>
   <div class="card">
+    <label>Ocena całego dnia (1–10)</label>
+    <div class="day-rating-row"><input type="number" min="1" max="10" step="1" inputmode="numeric" placeholder="np. 8" data-chg="dayRating" value="${esc(ev.dayRating ?? '')}">
+      <span class="mut">1 = słaby dzień · 10 = świetny dzień</span></div>
+    <label>Opis dnia</label>
+    <textarea data-chg="ev" data-f="dayNote" placeholder="Co wpłynęło na tę ocenę?">${esc(ev.dayNote || '')}</textarea>
     <label>Minimum zrobione?</label>
     <div class="row keep" style="gap:8px">
       <button class="${ev.ok === 1 ? 'pri' : ''}" data-act="evOk" data-v="1">1 – tak</button>
@@ -759,6 +906,7 @@ function screenTydzien() {
     const bl = blocksFor(s);
     return `<div class="col">
       <div class="colh ${s === today ? 'on' : ''}">${DNI[dow(s)]} ${shortDate(s)}</div>
+      ${dayManualButton(s)}
       ${bl.map(b => `<div class="cblk ${b.done ? 'done' : ''}" style="border-left-color:${areaColor(b.area)}" data-act="blockToggle" data-s="${s}" data-k="${b.kind}" data-id="${b.id}" role="button" aria-pressed="${b.done ? 'true' : 'false'}">
         <div class="ctop"><span class="tm">${tm(b)}</span><button class="cedit" data-act="blockOpen" data-s="${s}" data-k="${b.kind}" data-id="${b.id}" aria-label="edytuj blok">✎</button></div>
         <div class="cname">${b.done ? '✔ ' : ''}${esc(b.name)}</div>
@@ -774,7 +922,10 @@ function screenTydzien() {
       ${mon !== mondayOf(today) ? '<button class="link" data-act="weekToday">↩ ten tydzień</button>' : ''}</div>
     <button class="ic" data-act="weekShift" data-n="1" aria-label="następny tydzień">›</button>
   </div>
-  <div class="card"><div class="stats">
+  <div class="card">
+    <div class="week-progress-label"><span>Postęp tygodnia</span><b>${sum.p}%</b></div>
+    <div class="week-progress-track" role="progressbar" aria-label="Postęp tygodnia" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${sum.p}"><i style="--progress:${sum.p}%"></i></div>
+    <div class="stats">
     <div><div class="big">${sum.p}%</div><div class="mut">wykonanie</div></div>
     <div><div class="big">${sum.ok}/7</div><div class="mut">dni ze streakiem</div></div>
     <div><div class="big">${sum.sess}</div><div class="mut">treningi w tygodniu</div></div>
@@ -783,32 +934,144 @@ function screenTydzien() {
   <div class="sec"><h2>Bloki stałe</h2><small>${tpl.length} szt.</small></div>
   <div class="card">${tpl.map(t => `<div class="item" data-act="blockOpen" data-s="${today}" data-k="t" data-id="${t.id}" style="cursor:pointer">
       <div class="grow"><div><b>${tm(t)}</b> · ${esc(t.name)}</div>
-      <div class="mut">${t.days.map(i => DNI[i]).join(' ')} · ${areaLabel(t.area)}</div></div><span class="mut">✎</span></div>`).join('') || '<div class="hint">Brak bloków stałych.</div>'}
+      <div class="mut">${t.days.map(i => DNI[i]).join(' ')} · ${esc(areaLabel(t.area))}</div></div><span class="mut">✎</span></div>`).join('') || '<div class="hint">Brak bloków stałych.</div>'}
     <button class="pri full" data-act="tplNew" style="margin-top:12px">+ Dodaj blok stały</button></div>
   <div class="hint">Kliknij blok w kalendarzu, żeby zmienić go tylko na dziś albo na stałe.</div>`;
 }
 function weekSummary(mon) {
   const days = [0, 1, 2, 3, 4, 5, 6].map(i => addDays(mon, i));
-  let tot = 0, dn = 0, ok = 0;
+  let tot = 0, dn = 0, ok = 0, completedWorkouts = 0;
   days.forEach(s => {
     const bl = blocksFor(s);
-    tot += bl.length; dn += bl.filter(b => b.done).length;
+    const counted = bl.filter(b => !isSchoolArea(b.area));
+    tot += counted.length;
+    dn += counted.filter(b => b.done).length;
+    completedWorkouts += bl.filter(b => b.done && isTrainingArea(b.area)).length;
     if (dayComplete(s)) ok++;
   });
-  const sess = data.sessions.filter(x => days.includes(x.date)).length;
+  const sess = data.sessions.filter(x => days.includes(x.date)).length + completedWorkouts;
   const sleeps = days.map(s => data.days[s] && data.days[s].diet ? sleepH(data.days[s].diet.bed, data.days[s].diet.wake) : null).filter(x => x != null);
-  const shots = data.shots.filter(p => days.includes(p.date)).length;
-  return { p: tot ? Math.round(dn / tot * 100) : 0, ok, sess, shots,
+  return { p: tot ? Math.round(dn / tot * 100) : 0, ok, sess,
            sleep: sleeps.length ? (sleeps.reduce((a, b) => a + b, 0) / sleeps.length).toFixed(1) : '—' };
+}
+
+// === PRZYPOMNIENIA ===
+function reminderRepeatLabel(r) {
+  if (r.repeat === 'daily') return 'codziennie';
+  if (r.repeat === 'weekly') return `wybrane dni: ${(r.days || []).map(i => DNI[i]).filter(Boolean).join(' ') || '—'}`;
+  return `jednorazowo${r.date ? ' · ' + shortDate(r.date) : ''}`;
+}
+function reminderExpired(r) {
+  if (r.repeat !== 'once' || !r.date || !r.time) return false;
+  const now = new Date();
+  let local = `${todayISO()}T${pad(now.getHours())}:${pad(now.getMinutes())}`;
+  try {
+    const timeZone = r.timeZone || Intl.DateTimeFormat().resolvedOptions().timeZone;
+    const parts = new Intl.DateTimeFormat('en-GB', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).formatToParts(now);
+    const values = Object.fromEntries(parts.filter(p => p.type !== 'literal').map(p => [p.type, p.value]));
+    local = `${values.year}-${values.month}-${values.day}T${values.hour}:${values.minute}`;
+  } catch (e) { /* awaryjnie użyj lokalnej strefy urządzenia */ }
+  return `${r.date}T${r.time}` < local;
+}
+function reminderFields(r = {}) {
+  const repeat = r.repeat || 'once', days = Array.isArray(r.days) ? r.days : [];
+  return `<label>Co mam przypomnieć?</label><input name="remTitle" maxlength="80" value="${esc(r.title || '')}" placeholder="np. wypić wodę">
+    <label>Treść powiadomienia (opcjonalnie)</label><textarea name="remBody" maxlength="180" placeholder="Krótka wiadomość na telefon">${esc(r.body || '')}</textarea>
+    <div class="grid2">
+      <div><label>Godzina</label><input type="time" name="remTime" value="${esc(r.time || '')}" required></div>
+      <div><label>Powtarzanie</label><select name="repeat" data-chg="remRepeat">
+        <option value="once" ${repeat === 'once' ? 'selected' : ''}>Jednorazowo</option>
+        <option value="daily" ${repeat === 'daily' ? 'selected' : ''}>Codziennie</option>
+        <option value="weekly" ${repeat === 'weekly' ? 'selected' : ''}>Wybrane dni</option>
+      </select></div>
+    </div>
+    <div id="remDateFields" class="${repeat === 'once' ? '' : 'hidden'}"><label>Data</label><input type="date" name="remDate" value="${esc(r.date || todayISO())}"></div>
+    <div id="remDaysFields" class="${repeat === 'weekly' ? '' : 'hidden'}"><label>Dni tygodnia</label>
+      <div class="pills">${DNI.map((n, i) => `<label class="pill"><input type="checkbox" name="remDays" value="${i}" ${days.includes(i) ? 'checked' : ''}> ${n}</label>`).join('')}</div>
+    </div>
+    <div class="hint">Godzina jest liczona w strefie czasowej urządzenia, na którym zapiszesz przypomnienie.</div>`;
+}
+function openReminder(id = null) {
+  const old = id ? (data.reminders || []).find(r => r.id === id) : null;
+  const now = new Date(Date.now() + 5 * 60 * 1000);
+  const defaultTime = `${pad(now.getHours())}:${pad(now.getMinutes())}`;
+  const reminder = old || { title: '', body: '', time: defaultTime, repeat: 'once', date: todayISO(), days: [], enabled: true };
+  openSheet(`<h2>${old ? 'Edytuj przypomnienie' : 'Nowe przypomnienie'}</h2>
+    ${reminderFields(reminder)}
+    <div class="foot"><button class="pri full" data-act="reminderSave" data-id="${esc(old ? old.id : '')}">Zapisz przypomnienie</button><button class="full" data-act="sheetClose">Anuluj</button></div>`);
+}
+function readReminderForm() {
+  const q = name => document.querySelector(`#sheet [name="${name}"]`);
+  return {
+    title: q('remTitle') ? q('remTitle').value.trim() : '',
+    body: q('remBody') ? q('remBody').value.trim() : '',
+    time: q('remTime') ? q('remTime').value : '',
+    repeat: q('repeat') ? q('repeat').value : 'once',
+    date: q('remDate') ? q('remDate').value : '',
+    days: [...document.querySelectorAll('#sheet [name="remDays"]:checked')].map(x => +x.value)
+  };
+}
+function screenPrzypomnienia() {
+  const reminders = (Array.isArray(data.reminders) ? data.reminders : []).filter(r => r && typeof r === 'object')
+    .sort((a, b) => (a.time || '').localeCompare(b.time || ''));
+  const android = /Android/i.test(navigator.userAgent || '');
+  const supported = typeof Notification !== 'undefined' && !!navigator.serviceWorker;
+  const permission = supported ? Notification.permission : 'unsupported';
+  const currentUid = window.FB && window.FB.auth && window.FB.auth.currentUser ? window.FB.auth.currentUser.uid : '';
+  const loggedIn = !!currentUid;
+  const pushVapidConfigured = !!(window.FB && window.FB.pushVapidConfigured);
+  const pushBackendDeployed = !!(window.FB && window.FB.pushBackendDeployed);
+  const pushConfigured = pushVapidConfigured && pushBackendDeployed;
+  const registered = !!localStorage.getItem('lifeos.pushToken') && localStorage.getItem('lifeos.pushUid') === currentUid;
+  const canEnable = android && supported && loggedIn && pushConfigured && permission !== 'denied';
+  const pushMessage = !android ? 'Otwórz Life OS w Chrome na Androidzie, aby włączyć powiadomienia na telefonie.'
+    : !supported ? 'Ta przeglądarka nie obsługuje powiadomień web push.'
+      : !loggedIn ? 'Zaloguj się na konto Firebase, aby przypomnienia były przypisane do Twojego konta.'
+        : !pushVapidConfigured ? 'Brakuje publicznego klucza VAPID z Firebase Cloud Messaging.'
+          : !pushBackendDeployed ? 'Serwer przypomnień nie został wdrożony. Powiadomienia push nie są jeszcze wysyłane.'
+            : permission === 'denied' ? 'Powiadomienia są zablokowane w ustawieniach Chrome dla tej strony.'
+              : registered ? 'Powiadomienia są włączone na tym urządzeniu Android.'
+                : 'Włącz zgodę na powiadomienia na tym Androidzie.';
+  const rows = reminders.map(r => {
+    const expired = reminderExpired(r), enabled = r.enabled !== false && !expired;
+    return `<div class="reminder-item ${enabled ? '' : 'off'}">
+      <div class="reminder-time">${esc(r.time || '—')}</div>
+      <div class="grow"><div class="reminder-title">${esc(r.title || 'Bez nazwy')}</div>
+        <div class="mut">${esc(reminderRepeatLabel(r))} · ${expired ? 'minęło' : (r.enabled === false ? 'wstrzymane' : 'włączone')}</div>
+        ${r.body ? `<div class="reminder-body">${esc(r.body)}</div>` : ''}</div>
+      <div class="reminder-actions">
+        <button data-act="reminderToggle" data-id="${esc(r.id)}" aria-label="${r.enabled === false ? 'włącz' : 'wstrzymaj'}">${r.enabled === false ? '▶' : 'Ⅱ'}</button>
+        <button data-act="reminderEdit" data-id="${esc(r.id)}" aria-label="edytuj">✎</button>
+        <button class="x" data-act="reminderDelete" data-id="${esc(r.id)}" aria-label="usuń">✕</button>
+      </div>
+    </div>`;
+  }).join('');
+  const activeCount = reminders.filter(r => r.enabled !== false && !reminderExpired(r)).length;
+  return `<h1>🔔 Przypomnienia</h1><div class="sub">Ustaw co i o której mam Ci przypomnieć</div>
+    <div class="card push-card">
+      <div class="big">Powiadomienia na Androidzie</div>
+      <div class="hint">${pushMessage}</div>
+      ${android ? `<div class="row keep" style="flex-wrap:wrap;gap:8px;margin-top:10px">
+        <button class="pri" data-act="pushEnable" ${canEnable ? '' : 'disabled'}>${registered ? 'Odśwież konfigurację' : 'Włącz powiadomienia'}</button>
+        ${registered ? '<button class="danger" data-act="pushDisable">Wyłącz na tym Androidzie</button>' : ''}
+      </div>` : ''}
+      <div class="hint">Lista przypomnień synchronizuje się z tym samym kontem Firebase co reszta danych. Powiadomienia są przypisane do urządzenia.</div>
+    </div>
+    <div class="sec"><h2>Moje przypomnienia</h2><small>${activeCount} aktywne</small></div>
+    <div class="card">
+      ${rows || '<div class="hint">Nie ma jeszcze przypomnień. Dodaj pierwsze poniżej.</div>'}
+      <button class="pri full" data-act="reminderNew" style="margin-top:12px">＋ Dodaj przypomnienie</button>
+    </div>
+    <div class="hint">Możesz ustawić przypomnienie jednorazowe, codzienne albo na wybrane dni tygodnia.</div>`;
 }
 function openExtra(s) {
   openSheet(`<h2>Blok jednorazowy</h2><div class="hint">${fmtDate(s)} · tylko ten dzień</div>
-    ${blockFields({ name: '', from: '', to: '', area: 'kosz', done: false, rating: 0, note: '' }, null)}
+    ${blockFields({ name: '', from: '', to: '', area: '', done: false, note: '' }, null)}
     <div class="foot"><button class="pri full" data-act="extraAdd" data-s="${s}">Dodaj</button><button class="full" data-act="sheetClose">Anuluj</button></div>`);
 }
 function openTpl() {
   openSheet(`<h2>Nowy blok stały</h2><div class="hint">Będzie się powtarzał w wybrane dni.</div>
-    ${blockFields({ name: '', from: '', to: '', area: 'kosz', done: false, rating: 0, note: '' }, [])}
+    ${blockFields({ name: '', from: '', to: '', area: '', done: false, note: '' }, [])}
     <div class="foot"><button class="pri full" data-act="tplAdd">Dodaj do tygodnia</button><button class="full" data-act="sheetClose">Anuluj</button></div>`);
 }
 function blockFields(b, days) {
@@ -817,11 +1080,10 @@ function blockFields(b, days) {
     <div><label>Od</label><input type="time" name="from" value="${b.from}"></div>
     <div><label>Do</label><input type="time" name="to" value="${b.to}"></div>
   </div>
-  <label>Obszar</label>${areaSelect(b.area)}
+  <label>Kategoria</label>${areaSelect(b.area)}
   ${days ? `<label>Dni tygodnia (dla bloku stałego)</label>
   <div class="pills">${DNI.map((n, i) => `<label class="pill"><input type="checkbox" name="days" value="${i}" ${days.includes(i) ? 'checked' : ''}> ${n}</label>`).join('')}</div>` : ''}
   <label class="pill" style="margin-top:14px"><input type="checkbox" name="done" ${b.done ? 'checked' : ''}> Zrobione</label>
-  <label>Ocena</label>${rateSelect(b.rating)}
   <label>Notatka</label><textarea name="note">${esc(b.note)}</textarea>`;
 }
 function openBlock(s, k, id) {
@@ -855,13 +1117,13 @@ function openBlock(s, k, id) {
 
 // === EKRAN: KOSZ ===
 function screenKosz() {
-  const sub = state.sub.kosz;
-  const body = {
-    pomiary: koszPomiary, drille: koszDrille, hala: koszHala,
-    dziennik: koszDziennik, prios: koszPrios, diag: koszDiag
-  }[sub]();
+  const sub = ['drille', 'hala', 'dziennik'].includes(state.sub.kosz) ? state.sub.kosz : 'drille';
+  state.sub.kosz = sub;
+  const body = { drille: koszDrille, hala: koszHala, dziennik: koszDziennik }[sub]();
   return `<h1 style="margin:6px 0 4px">🏀 Kosz</h1>
-  ${tabs('kosz', [['pomiary', 'Pomiary'], ['drille', 'Drille'], ['hala', 'Plan hali'], ['dziennik', 'Dziennik'], ['prios', 'Priorytety'], ['diag', 'Diagnoza']])}
+  <div class="sub">Biblioteka drillów, plany na konkretne dni i dziennik treningów.</div>
+  ${koszMigrationCard()}
+  ${tabs('kosz', [['drille', 'Drille'], ['hala', 'Plan hali'], ['dziennik', 'Dziennik']])}
   ${body}`;
 }
 // === RZUTY: statystyki i wykres dla wybranego dryla i okresu ===
@@ -1046,7 +1308,7 @@ function shotEdit(id) {
       <button class="full" data-act="sheetClose">Anuluj</button>
     </div>`);
 }
-function koszDrille() {
+function koszLegacyDrille() {
   const bl = state.drillBlock || '';
   return `<div class="row" style="margin-bottom:8px"><select data-chg="drillBlock">
       <option value="">wszystkie bloki</option>${BLOCKS_DRILL.map(b => `<option value="${b}" ${b === bl ? 'selected' : ''}>${b}</option>`).join('')}</select></div>
@@ -1059,7 +1321,7 @@ function koszDrille() {
         ${d.link ? `<div class="mut">${esc(d.link)}</div>` : ''}`
     })}`;
 }
-function koszHala() {
+function koszLegacyHala() {
   if (data.hala.some(h => !data.template.some(t => t.hallId === h.id))) { data.hala.forEach(syncHall); save(); }
   return listCards('hala', {
     add: 'blok hali', empty: 'Brak bloków hali. Dodaj np. Pn 15:00 – 65 min.',
@@ -1069,7 +1331,7 @@ function koszHala() {
     extra: b => b.min ? `<button class="soft" data-act="timerStart" data-sec="${b.min * 60}" data-label="${esc(b.name)}">▶ start</button>` : ''
   });
 }
-function koszDziennik() {
+function koszLegacyDziennik() {
   return listCards('logs', {
     add: 'wpis', empty: 'Brak wpisów. Zapisuj treningi i mecze.',
     sort: (a, b) => (b.date || '').localeCompare(a.date || ''),
@@ -1123,6 +1385,479 @@ function diagSave() {
   save(); closeSheet(); render();
 }
 
+// === KOSZ: biblioteka drillów, plany na konkretne daty i dziennik ===
+const DRILL_VIDEO_DB = 'lifeos-drill-media';
+const DRILL_VIDEO_STORE = 'videos';
+let drillVideoDbPromise = null;
+let drillVideoObjectUrl = null;
+function releaseDrillVideoObjectUrl() {
+  if (drillVideoObjectUrl && typeof URL !== 'undefined' && URL.revokeObjectURL) URL.revokeObjectURL(drillVideoObjectUrl);
+  drillVideoObjectUrl = null;
+}
+function activeDrills() {
+  return (Array.isArray(data.drills) ? data.drills : []).filter(d => d && d.id && Array.isArray(d.categoryIds));
+}
+function findDrill(id) { return activeDrills().find(d => d.id === id) || null; }
+function normalizedDrillCategoryIds(drill) {
+  return [...new Set((drill && Array.isArray(drill.categoryIds) ? drill.categoryIds : []).filter(Boolean))];
+}
+function normalizeExternalUrl(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  const candidate = /^https?:\/\//i.test(raw) ? raw : `https://${raw}`;
+  try {
+    const parsed = new URL(candidate);
+    return ['http:', 'https:'].includes(parsed.protocol) ? parsed.href : '';
+  } catch (e) { return ''; }
+}
+function drillCategoryNames(ids) {
+  return (ids || []).map(id => byId(data.drillCategories, id)).filter(Boolean).map(c => c.name);
+}
+function koszDateLabel(value) {
+  const date = String(value || '');
+  return /^\d{4}-\d{2}-\d{2}$/.test(date) ? fmtDate(date) : (date || '—');
+}
+function drillCategoryChips(ids) {
+  const names = drillCategoryNames(ids);
+  return names.length ? `<span class="drill-tags">${names.map(name => `<span class="drill-tag">${esc(name)}</span>`).join('')}</span>`
+    : '<span class="mut">Bez kategorii</span>';
+}
+function koszMigrationCard() {
+  if (!data.koszMigrationPending) return '';
+  const exported = !!data.koszMigrationExportedAt;
+  return `<div class="card kosz-migration">
+    <b>Jednorazowa zmiana Kosza</b>
+    <div class="hint">W starej wersji znaleziono pomiary, drille, plan hali lub dziennik. Najpierw pobierz pełną kopię JSON. Dopiero potem możesz usunąć stare wpisy; nowe kategorie, plany i dziennik są od nich oddzielone. Plik backupu zawiera też pozostałe dane Life OS — przechowuj go prywatnie.</div>
+    <div class="row keep" style="gap:8px;flex-wrap:wrap">
+      <button class="pri" data-act="koszLegacyExport">${exported ? 'Pobierz kopię ponownie' : '1. Pobierz kopię JSON'}</button>
+      <button class="danger" data-act="koszLegacyClear" ${exported ? '' : 'disabled'}>2. Wyczyść stare sekcje</button>
+    </div>
+    ${exported ? '<div class="mut" style="margin-top:8px">Kopia została wygenerowana. Po wyczyszczeniu stare dane znikną z aktywnego Kosza i synchronizowanych danych.</div>' : '<div class="mut" style="margin-top:8px">Stare wpisy nie zostaną usunięte, dopóki nie pobierzesz kopii.</div>'}
+  </div>`;
+}
+function koszLegacyExport() {
+  if (!data.koszMigrationPending) return;
+  bkMake('przed zmianą Kosza');
+  download(`life-os-backup-before-kosz-${todayISO()}.json`, JSON.stringify(data, null, 2), 'application/json');
+  data.koszMigrationExportedAt = Date.now();
+  save(); render();
+}
+function koszLegacyClear() {
+  if (!data.koszMigrationPending) return;
+  if (!data.koszMigrationExportedAt) return alert('Najpierw pobierz kopię JSON.');
+  if (!confirm('Usunąć stare Pomiary, Drille, Plan hali, Dziennik, Priorytety i Diagnozę?\n\nNowe kategorie drillów, nowe plany na daty i nowy dziennik zostaną zachowane.')) return;
+  bkMake('przed wyczyszczeniem starego Kosza');
+  clearLegacyKoszData(data);
+  state.drillCategoryId = '';
+  save(); render();
+  cleanupOrphanDrillVideos().catch(() => {});
+  alert('Stare sekcje Kosza wyczyszczone. Nowy układ jest gotowy.');
+}
+function openDrillVideoDb() {
+  if (drillVideoDbPromise) return drillVideoDbPromise;
+  if (!window.indexedDB) return Promise.reject(new Error('Ta przeglądarka nie obsługuje lokalnego zapisu filmu. Użyj linku do filmu.'));
+  drillVideoDbPromise = new Promise((resolve, reject) => {
+    const req = window.indexedDB.open(DRILL_VIDEO_DB, 1);
+    req.onupgradeneeded = () => {
+      const db = req.result;
+      if (!db.objectStoreNames.contains(DRILL_VIDEO_STORE)) db.createObjectStore(DRILL_VIDEO_STORE, { keyPath: 'id' });
+    };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error || new Error('Nie można otworzyć lokalnego magazynu filmów.'));
+    req.onblocked = () => reject(new Error('Magazyn filmów jest zablokowany przez inną kartę. Zamknij pozostałe karty Life OS i spróbuj ponownie.'));
+  }).catch(error => { drillVideoDbPromise = null; throw error; });
+  return drillVideoDbPromise;
+}
+function storeDrillVideo(id, file) {
+  return openDrillVideoDb().then(db => new Promise((resolve, reject) => {
+    const tx = db.transaction(DRILL_VIDEO_STORE, 'readwrite');
+    tx.objectStore(DRILL_VIDEO_STORE).put({ id, blob: file, name: file.name || 'film', type: file.type || 'video/mp4', size: file.size || 0, updatedAt: Date.now() });
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error || new Error('Brak miejsca na zapis filmu na tym urządzeniu.'));
+    tx.onabort = () => reject(tx.error || new Error('Zapis filmu został przerwany.'));
+  }));
+}
+function readDrillVideo(id) {
+  return openDrillVideoDb().then(db => new Promise((resolve, reject) => {
+    const req = db.transaction(DRILL_VIDEO_STORE, 'readonly').objectStore(DRILL_VIDEO_STORE).get(id);
+    req.onsuccess = () => resolve(req.result || null);
+    req.onerror = () => reject(req.error || new Error('Nie udało się odczytać lokalnego filmu.'));
+  }));
+}
+function removeDrillVideo(id) {
+  if (!id) return Promise.resolve();
+  return openDrillVideoDb().then(db => new Promise((resolve, reject) => {
+    const tx = db.transaction(DRILL_VIDEO_STORE, 'readwrite');
+    tx.objectStore(DRILL_VIDEO_STORE).delete(id);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error || new Error('Nie udało się usunąć lokalnego filmu.'));
+    tx.onabort = () => reject(tx.error || new Error('Usuwanie filmu zostało przerwane.'));
+  }));
+}
+async function cleanupOrphanDrillVideos() {
+  if (!window.indexedDB) return;
+  const db = await openDrillVideoDb();
+  const keep = new Set((data.drills || []).map(d => d && d.videoId).filter(Boolean));
+  const rows = await new Promise((resolve, reject) => {
+    const req = db.transaction(DRILL_VIDEO_STORE, 'readonly').objectStore(DRILL_VIDEO_STORE).getAll();
+    req.onsuccess = () => resolve(req.result || []);
+    req.onerror = () => reject(req.error || new Error('Nie udało się sprawdzić lokalnych filmów.'));
+  });
+  const orphanIds = rows.filter(row => !keep.has(row.id)).map(row => row.id);
+  await Promise.all(orphanIds.map(removeDrillVideo));
+}
+function isVideoFile(file) {
+  return !!file && ((file.type || '').toLowerCase().startsWith('video/') || /\.(mp4|m4v|mov|webm|mkv|3gp|avi)$/i.test(file.name || ''));
+}
+function formatBytes(bytes) {
+  const size = Number(bytes) || 0;
+  if (size < 1024 * 1024) return `${Math.max(1, Math.round(size / 1024))} KB`;
+  return `${(size / (1024 * 1024)).toFixed(1)} MB`;
+}
+function drillCategoryChecklist(selected = []) {
+  const chosen = new Set(selected);
+  const categories = Array.isArray(data.drillCategories) ? data.drillCategories : [];
+  if (!categories.length) return '<div class="hint">Nie masz jeszcze kategorii. Wróć do listy Drilli i dodaj np. Shooting, Handle albo Footwork.</div>';
+  return `<div class="drill-category-picker">${categories.map(c => `<label class="pill"><input type="checkbox" name="drillCategoryIds" value="${esc(c.id)}" ${chosen.has(c.id) ? 'checked' : ''}> ${esc(c.name)}</label>`).join('')}</div>`;
+}
+function drillSelectionChecklist(selected = [], name = 'drillIds') {
+  const chosen = new Set(selected);
+  const drills = [...activeDrills()].sort((a, b) => a.name.localeCompare(b.name, 'pl'));
+  if (!drills.length) return '<div class="hint">Najpierw dodaj drille w zakładce Drille — potem można je podpiąć tutaj.</div>';
+  return `<div class="drill-checklist">${drills.map(d => `<label class="drill-check-row"><input type="checkbox" name="${name}" value="${esc(d.id)}" ${chosen.has(d.id) ? 'checked' : ''}><span><b>${esc(d.name)}</b>${drillCategoryChips(normalizedDrillCategoryIds(d))}</span></label>`).join('')}</div>`;
+}
+function readCheckedValues(root, name) {
+  if (!root || typeof root.querySelectorAll !== 'function') return [];
+  return Array.from(root.querySelectorAll(`[name="${name}"]:checked`)).map(el => el.value).filter(Boolean);
+}
+function snapshotDrills(ids, previous = []) {
+  const old = new Map((previous || []).map(x => [x.id, x]));
+  return ids.map(id => {
+    const drill = findDrill(id);
+    const saved = old.get(id);
+    return { id, name: drill ? drill.name : (saved && saved.name) || 'Drill usunięty' };
+  });
+}
+function drillReferences(ids = [], snapshots = []) {
+  const labels = new Map((snapshots || []).map(x => [x.id, x.name]));
+  const uniqueIds = [...new Set(Array.isArray(ids) ? ids : [])];
+  if (!uniqueIds.length) return '<span class="mut">Brak przypiętych drillów.</span>';
+  return `<div class="drill-ref-list">${uniqueIds.map(id => {
+    const drill = findDrill(id);
+    const label = drill ? drill.name : (labels.get(id) || 'Drill usunięty');
+    return drill
+      ? `<button class="drill-ref" data-act="drillOpen" data-id="${esc(id)}">🏀 ${esc(label)} ↗</button>`
+      : `<span class="drill-ref missing">${esc(label)} · usunięty z biblioteki</span>`;
+  }).join('')}</div>`;
+}
+function koszDrille() {
+  const categories = Array.isArray(data.drillCategories) ? data.drillCategories : [];
+  const selected = categories.some(c => c.id === state.drillCategoryId) ? state.drillCategoryId : '';
+  state.drillCategoryId = selected;
+  const library = activeDrills().filter(d => !selected || normalizedDrillCategoryIds(d).includes(selected))
+    .sort((a, b) => a.name.localeCompare(b.name, 'pl'));
+  const categorySelect = `<label>Wybierz kategorię</label><select data-chg="drillCategoryId">
+    <option value="" ${selected ? '' : 'selected'}>Wszystkie drille</option>
+    ${categories.map(c => `<option value="${esc(c.id)}" ${c.id === selected ? 'selected' : ''}>${esc(c.name)} · ${activeDrills().filter(d => normalizedDrillCategoryIds(d).includes(c.id)).length}</option>`).join('')}
+  </select>`;
+  const cards = library.map(d => `<article class="card drill-card">
+    <button class="drill-card-open" data-act="drillOpen" data-id="${esc(d.id)}">
+      <span class="drill-card-title">${esc(d.name)}</span>
+      ${drillCategoryChips(normalizedDrillCategoryIds(d))}
+      ${d.description ? `<span class="drill-card-description">${esc(d.description.slice(0, 150))}${d.description.length > 150 ? '…' : ''}</span>` : '<span class="mut">Dodaj opis wykonania, żeby mieć instrukcję pod ręką.</span>'}
+      <span class="drill-card-media">${d.videoId ? '▶ Film zapisany na urządzeniu' : ''}${d.videoId && d.link ? ' · ' : ''}${d.link ? '↗ Link do filmu' : ''}</span>
+    </button>
+    <div class="row keep drill-card-actions">
+      <button data-act="drillJournalNew" data-id="${esc(d.id)}">＋ Wpis</button>
+      <button data-act="drillEdit" data-id="${esc(d.id)}">Edytuj</button>
+      <button class="danger" data-act="drillDel" data-id="${esc(d.id)}">Usuń</button>
+    </div>
+  </article>`).join('');
+  const empty = categories.length
+    ? '<div class="hint">W tej kategorii nie ma jeszcze drillów. Dodaj pierwszy przyciskiem powyżej.</div>'
+    : '<div class="hint">Dodaj własne kategorie, np. Shooting, Handle, Finishing albo Footwork, a potem przypisuj im dowolne drille.</div>';
+  return `<div class="card drill-library-tools">
+    ${categorySelect}
+    <div class="row keep" style="gap:8px;flex-wrap:wrap;margin-top:10px">
+      <button class="pri grow" data-act="drillNew">＋ Dodaj drill</button>
+      <button class="grow" data-act="drillCategoryManager">⚙ Kategorie</button>
+    </div>
+  </div>
+  ${library.length ? cards : empty}`;
+}
+function openDrillCategoryManager() {
+  const categories = Array.isArray(data.drillCategories) ? data.drillCategories : [];
+  openSheet(`<h2>Kategorie drillów</h2>
+    <div class="hint">Jeden drill może być przypisany do kilku kategorii. Usunięcie kategorii nie kasuje samych drillów ani ich wpisów.</div>
+    <div class="card2">${categories.map(c => `<div class="item"><div class="grow"><b>${esc(c.name)}</b><div class="mut">${activeDrills().filter(d => normalizedDrillCategoryIds(d).includes(c.id)).length} drillów</div></div>
+      <button data-act="drillCategoryEdit" data-id="${esc(c.id)}" aria-label="zmień nazwę kategorii">✎</button>
+      <button class="x" data-act="drillCategoryDel" data-id="${esc(c.id)}" aria-label="usuń kategorię">✕</button></div>`).join('') || '<div class="hint">Nie ma kategorii. Dodaj np. Shooting lub Handle.</div>'}</div>
+    <div class="foot"><button class="pri full" data-act="drillCategoryNew">＋ Dodaj kategorię</button><button class="full" data-act="sheetClose">Gotowe</button></div>`);
+}
+function openDrillCategoryForm(id = '') {
+  const category = id ? byId(data.drillCategories, id) : null;
+  if (id && !category) return;
+  openSheet(`<h2>${category ? 'Zmień kategorię' : 'Nowa kategoria'}</h2>
+    <label>Nazwa kategorii</label><input name="categoryName" value="${esc(category && category.name || '')}" placeholder="np. Shooting, Handle, Footwork" maxlength="48" autocomplete="off">
+    <div class="foot"><button class="pri full" data-act="drillCategorySave" data-id="${esc(id)}">Zapisz</button>
+    <button class="full" data-act="drillCategoryManager">Anuluj</button></div>`);
+}
+function saveDrillCategory(el) {
+  const root = document.getElementById('sheetBox');
+  const name = (root.querySelector('[name="categoryName"]')?.value || '').trim();
+  if (!name) return alert('Wpisz nazwę kategorii.');
+  const id = el.dataset.id || '';
+  const duplicate = (data.drillCategories || []).find(c => c.id !== id && normalizeCategoryName(c.name) === normalizeCategoryName(name));
+  if (duplicate) return alert('Taka kategoria już istnieje.');
+  let category = id ? byId(data.drillCategories, id) : null;
+  if (category) category.name = name;
+  else {
+    category = { id: 'drill-cat-' + uid(), name };
+    data.drillCategories.push(category);
+  }
+  save(); render(); openDrillCategoryManager();
+}
+function deleteDrillCategory(el) {
+  const category = byId(data.drillCategories, el.dataset.id);
+  if (!category) return;
+  const refs = activeDrills().filter(d => normalizedDrillCategoryIds(d).includes(category.id)).length;
+  if (!confirm(`Usunąć kategorię „${category.name}”?${refs ? ` ${refs} drillów zostanie w bibliotece bez tej kategorii.` : ''}`)) return;
+  data.drillCategories = data.drillCategories.filter(c => c.id !== category.id);
+  activeDrills().forEach(d => { d.categoryIds = normalizedDrillCategoryIds(d).filter(id => id !== category.id); });
+  if (state.drillCategoryId === category.id) state.drillCategoryId = '';
+  save(); openDrillCategoryManager(); render();
+}
+function openDrillEditor(id = '') {
+  const d = id ? findDrill(id) : null;
+  if (id && !d) return;
+  const drill = d || { name: '', description: '', link: '', categoryIds: state.drillCategoryId ? [state.drillCategoryId] : [], videoId: '' };
+  openSheet(`<h2>${d ? 'Edytuj drill' : 'Nowy drill'}</h2>
+    <label>Nazwa drilla</label><input name="drillName" value="${esc(drill.name)}" placeholder="np. Pound dribble → crossover → layup" maxlength="100" autocomplete="off">
+    <label>Opis / wskazówki wykonania</label><textarea name="drillDescription" placeholder="Seria, liczba powtórzeń, na co uważać…">${esc(drill.description || '')}</textarea>
+    <label>Kategorie (możesz zaznaczyć kilka)</label>${drillCategoryChecklist(normalizedDrillCategoryIds(drill))}
+    <label>Link do filmu lub instrukcji</label><input name="drillLink" type="url" value="${esc(drill.link || '')}" placeholder="https://youtu.be/… lub tiktok.com/…" inputmode="url">
+    ${drill.videoId ? `<div class="hint">Do tego drilla przypisano lokalny film. Oryginał pozostaje w galerii; kopia działa tylko na urządzeniu, na którym została dodana.</div>
+      <label class="pill"><input type="checkbox" name="removeDrillVideo"> Usuń film z tego drilla</label>` : ''}
+    <label>Dodaj / podmień film z telefonu</label><input id="drillVideoFile" type="file" accept="video/*" aria-label="wybierz film z galerii">
+    <div class="hint">Wybierz film z galerii. Life OS zapisze lokalną kopię w tej przeglądarce — oryginał zostaje w galerii telefonu. Film nie jest wysyłany do Firebase ani na komputer; można go obejrzeć w szczegółach drilla. Kopia zniknie po wyczyszczeniu danych przeglądarki lub odinstalowaniu aplikacji.</div>
+    <div class="foot"><button class="pri full" data-act="drillSave" data-id="${esc(id)}">${d ? 'Zapisz zmiany' : 'Dodaj drill'}</button>
+    <button class="full" data-act="sheetClose">Anuluj</button></div>`);
+}
+function saveDrill(el) {
+  const root = document.getElementById('sheetBox');
+  const name = (root.querySelector('[name="drillName"]')?.value || '').trim();
+  if (!name) return alert('Wpisz nazwę drilla.');
+  const old = el.dataset.id ? findDrill(el.dataset.id) : null;
+  const description = (root.querySelector('[name="drillDescription"]')?.value || '').trim();
+  const linkRaw = (root.querySelector('[name="drillLink"]')?.value || '').trim();
+  const link = normalizeExternalUrl(linkRaw);
+  if (linkRaw && !link) return alert('Wklej poprawny link zaczynający się od https:// lub http://.');
+  const categoryIds = readCheckedValues(root, 'drillCategoryIds');
+  const fileInput = document.getElementById('drillVideoFile');
+  const file = fileInput && fileInput.files && fileInput.files[0];
+  const removeVideo = !!(root.querySelector('[name="removeDrillVideo"]') || {}).checked;
+  const id = old ? old.id : 'drill-' + uid();
+  let videoId = old && old.videoId || '';
+  const finish = () => {
+    const record = { id, name, description, categoryIds, link, videoId, createdAt: old && old.createdAt || Date.now(), updatedAt: Date.now() };
+    if (old) Object.assign(old, record);
+    else data.drills.push(record);
+    save(); closeSheet(); render();
+  };
+  if (file) {
+    if (!isVideoFile(file)) return alert('Wybierz plik wideo (np. MP4, MOV lub WebM).');
+    storeDrillVideo(id, file).then(() => { videoId = id; finish(); })
+      .catch(error => alert(`Nie udało się zapisać filmu lokalnie: ${error.message || error}\n\nMożesz zamiast tego wkleić link do filmu.`));
+  } else if (removeVideo && videoId) {
+    removeDrillVideo(videoId).then(() => { videoId = ''; finish(); })
+      .catch(error => alert(`Nie udało się usunąć filmu: ${error.message || error}`));
+  } else finish();
+}
+function drillDetailHtml(d) {
+  const link = normalizeExternalUrl(d.link);
+  const categories = drillCategoryNames(normalizedDrillCategoryIds(d));
+  return `<h2>${esc(d.name)}</h2>
+    ${categories.length ? `<div class="drill-tags">${categories.map(name => `<span class="drill-tag">${esc(name)}</span>`).join('')}</div>` : ''}
+    <div class="drill-description">${d.description ? esc(d.description).replace(/\n/g, '<br>') : '<span class="mut">Brak opisu — możesz dodać wskazówki w edycji.</span>'}</div>
+    ${d.videoId ? '<div class="drill-video-area" id="drillVideoArea"><div class="hint">Otwieram lokalny film…</div></div>' : ''}
+    ${link ? `<a class="pri full drill-external-link" href="${esc(link)}" target="_blank" rel="noopener noreferrer">Otwórz film / link ↗</a>` : (d.link ? '<div class="hint">Zapisany link jest nieprawidłowy. Popraw go w edycji.</div>' : '')}
+    ${d.videoId ? '<div class="hint">Film lokalny jest przechowywany na urządzeniu, które dodało plik. Pozostałe urządzenia mogą otworzyć zapisany wyżej link.</div>' : ''}
+    <div class="foot"><button class="pri full" data-act="drillJournalNew" data-id="${esc(d.id)}">＋ Zapisz wynik / notatkę do tego drilla</button>
+    <button class="full" data-act="drillEdit" data-id="${esc(d.id)}">Edytuj drill</button><button class="full" data-act="sheetClose">Zamknij</button></div>`;
+}
+async function openDrillDetail(id) {
+  const d = findDrill(id);
+  if (!d) return;
+  state.activeDrillDetailId = id;
+  openSheet(drillDetailHtml(d));
+  if (!d.videoId) return;
+  try {
+    const saved = await readDrillVideo(d.videoId);
+    if (state.activeDrillDetailId !== id) return;
+    const mount = document.getElementById('drillVideoArea');
+    if (!mount) return;
+    if (!saved || !saved.blob) {
+      mount.innerHTML = '<div class="hint">Lokalny plik nie jest dostępny w tej przeglądarce. Otwórz tego drilla na telefonie, na którym dodano film, albo użyj linku zewnętrznego.</div>';
+      return;
+    }
+    if (drillVideoObjectUrl && typeof URL !== 'undefined') URL.revokeObjectURL(drillVideoObjectUrl);
+    drillVideoObjectUrl = URL.createObjectURL(saved.blob);
+    mount.innerHTML = `<video class="drill-video" controls playsinline preload="metadata" src="${esc(drillVideoObjectUrl)}">Twoja przeglądarka nie obsługuje odtwarzania wideo.</video><div class="mut">${esc(saved.name || 'Film lokalny')} · ${formatBytes(saved.size)}</div>`;
+  } catch (error) {
+    const mount = document.getElementById('drillVideoArea');
+    if (mount && state.activeDrillDetailId === id) mount.innerHTML = `<div class="hint">Nie udało się otworzyć lokalnego filmu: ${esc(error.message || error)}. Możesz użyć linku zewnętrznego.</div>`;
+  }
+}
+function openHallPlan(id = '') {
+  const item = id ? byId(data.hallPlans, id) : null;
+  if (id && !item) return;
+  const plan = item || { date: todayISO(), title: 'Trening na hali', note: '', drillIds: [], drillSnapshots: [] };
+  openSheet(`<h2>${item ? 'Edytuj plan hali' : 'Zaplanuj halę'}</h2>
+    <div class="hint">Wybierz konkretną datę — jeśli hala wypada, po prostu nie dodawaj planu na ten dzień.</div>
+    <label>Data</label><input type="date" name="planDate" value="${esc(plan.date || todayISO())}">
+    <label>Nazwa treningu</label><input name="planTitle" value="${esc(plan.title || '')}" placeholder="np. Hala po szkole">
+    <label>Drille do wykonania</label>${drillSelectionChecklist(plan.drillIds || [])}
+    <label>Notatka do planu</label><textarea name="planNote" placeholder="np. cel treningu, co zabrać…">${esc(plan.note || '')}</textarea>
+    <div class="foot"><button class="pri full" data-act="hallPlanSave" data-id="${esc(id)}">Zapisz plan</button>
+    ${item ? `<button class="danger full" data-act="hallPlanDel" data-id="${esc(id)}">Usuń plan</button>` : ''}<button class="full" data-act="sheetClose">Anuluj</button></div>`);
+}
+function planCard(plan) {
+  return `<article class="card hall-plan-card"><div class="row keep" style="justify-content:space-between;align-items:flex-start">
+      <div class="grow"><div class="mut">${esc(koszDateLabel(plan.date))}</div><h3>${esc(plan.title || 'Trening na hali')}</h3></div>
+      <button data-act="hallPlanEdit" data-id="${esc(plan.id)}" aria-label="edytuj plan">✎</button></div>
+    ${plan.note ? `<div class="drill-description">${esc(plan.note).replace(/\n/g, '<br>')}</div>` : ''}
+    <div class="mut" style="margin-top:8px">Zaplanowane drille</div>${drillReferences(plan.drillIds, plan.drillSnapshots)}</article>`;
+}
+function koszHala() {
+  const plans = Array.isArray(data.hallPlans) ? [...data.hallPlans] : [];
+  const today = todayISO();
+  const upcoming = plans.filter(p => (p.date || '') >= today).sort((a, b) => (a.date || '').localeCompare(b.date || ''));
+  const past = plans.filter(p => (p.date || '') < today).sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+  return `<div class="card hall-plan-tools"><div class="hint" style="margin-top:0">Tutaj zapisujesz tylko dni, kiedy hala faktycznie jest. Nie ma sztywnego poniedziałkowo-środowego grafiku.</div>
+    <button class="pri full" data-act="hallPlanNew">＋ Zaplanuj trening na konkretny dzień</button></div>
+    ${upcoming.length ? `<div class="sec"><h2>Nadchodzące</h2></div>${upcoming.map(planCard).join('')}` : '<div class="hint">Nie masz zaplanowanej hali w nadchodzących dniach. Dodaj plan, gdy poznasz datę.</div>'}
+    ${past.length ? `<div class="sec"><h2>Historia planów</h2></div>${past.map(planCard).join('')}` : ''}`;
+}
+function saveHallPlan(el) {
+  const root = document.getElementById('sheetBox');
+  const date = root.querySelector('[name="planDate"]')?.value || '';
+  const title = (root.querySelector('[name="planTitle"]')?.value || '').trim() || 'Trening na hali';
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return alert('Wybierz datę treningu.');
+  const note = (root.querySelector('[name="planNote"]')?.value || '').trim();
+  const drillIds = readCheckedValues(root, 'drillIds');
+  const old = el.dataset.id ? byId(data.hallPlans, el.dataset.id) : null;
+  const record = { id: old ? old.id : 'hall-plan-' + uid(), date, title, note, drillIds, drillSnapshots: snapshotDrills(drillIds, old && old.drillSnapshots), updatedAt: Date.now() };
+  if (old) Object.assign(old, record); else data.hallPlans.push(record);
+  save(); closeSheet(); render();
+}
+function deleteHallPlan(el) {
+  const plan = byId(data.hallPlans, el.dataset.id);
+  if (!plan || !confirm(`Usunąć plan „${plan.title || 'Trening na hali'}” z ${plan.date}?`)) return;
+  data.hallPlans = data.hallPlans.filter(x => x.id !== plan.id);
+  save(); closeSheet(); render();
+}
+function openTrainingJournal(id = '') {
+  const item = id ? byId(data.trainingJournal, id) : null;
+  if (id && !item) return;
+  const entry = item || { date: todayISO(), title: '', note: '', drillIds: [], drillSnapshots: [] };
+  openSheet(`<h2>${item ? 'Edytuj wpis treningu' : 'Nowy wpis treningu'}</h2>
+    <label>Data</label><input type="date" name="journalDate" value="${esc(entry.date || todayISO())}">
+    <label>Nazwa treningu</label><input name="journalTitle" value="${esc(entry.title || '')}" placeholder="np. Rzuty po hali, trening klubowy…">
+    <label>Drille z tego treningu</label>${drillSelectionChecklist(entry.drillIds || [])}
+    <label>Notatki z treningu</label><textarea name="journalNote" placeholder="Jak poszło? Co poprawić następnym razem?">${esc(entry.note || '')}</textarea>
+    <div class="foot"><button class="pri full" data-act="trainingJournalSave" data-id="${esc(id)}">Zapisz wpis</button>
+    ${item ? `<button class="danger full" data-act="trainingJournalDel" data-id="${esc(id)}">Usuń wpis</button>` : ''}<button class="full" data-act="sheetClose">Anuluj</button></div>`);
+}
+function saveTrainingJournal(el) {
+  const root = document.getElementById('sheetBox');
+  const date = root.querySelector('[name="journalDate"]')?.value || '';
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return alert('Wybierz datę treningu.');
+  const title = (root.querySelector('[name="journalTitle"]')?.value || '').trim() || 'Trening';
+  const note = (root.querySelector('[name="journalNote"]')?.value || '').trim();
+  const drillIds = readCheckedValues(root, 'drillIds');
+  const old = el.dataset.id ? byId(data.trainingJournal, el.dataset.id) : null;
+  const record = { id: old ? old.id : 'journal-' + uid(), date, title, note, drillIds, drillSnapshots: snapshotDrills(drillIds, old && old.drillSnapshots), updatedAt: Date.now() };
+  if (old) Object.assign(old, record); else data.trainingJournal.push(record);
+  save(); closeSheet(); render();
+}
+function openDrillJournal(id = '', presetDrillId = '') {
+  const item = id ? byId(data.drillJournal, id) : null;
+  if (id && !item) return;
+  const entry = item || { date: todayISO(), drillId: presetDrillId, result: '', note: '' };
+  const drillOptions = [...activeDrills()].sort((a, b) => a.name.localeCompare(b.name, 'pl'))
+    .map(d => `<option value="${esc(d.id)}" ${d.id === entry.drillId ? 'selected' : ''}>${esc(d.name)}${drillCategoryNames(normalizedDrillCategoryIds(d)).length ? ' · ' + esc(drillCategoryNames(normalizedDrillCategoryIds(d)).join(', ')) : ''}</option>`).join('');
+  const missing = entry.drillId && !findDrill(entry.drillId) ? `<option value="${esc(entry.drillId)}" selected>${esc(entry.drillName || 'Usunięty drill')} · poza biblioteką</option>` : '';
+  openSheet(`<h2>${item ? 'Edytuj wpis o drill’u' : 'Nowy wpis o drill’u'}</h2>
+    <label>Data</label><input type="date" name="drillJournalDate" value="${esc(entry.date || todayISO())}">
+    <label>Drill</label><select name="drillJournalId"><option value="">— wybierz drill —</option>${missing}${drillOptions}</select>
+    <label>Wynik / odczucia (opcjonalnie)</label><input name="drillJournalResult" value="${esc(entry.result || '')}" placeholder="np. 8/10 trafionych, lewa ręka słabsza">
+    <label>Notatka</label><textarea name="drillJournalNote" placeholder="Co zauważyłem? Co zmienić przy następnym razie?">${esc(entry.note || '')}</textarea>
+    <div class="foot"><button class="pri full" data-act="drillJournalSave" data-id="${esc(id)}">Zapisz wpis</button>
+    ${item ? `<button class="danger full" data-act="drillJournalDel" data-id="${esc(id)}">Usuń wpis</button>` : ''}<button class="full" data-act="sheetClose">Anuluj</button></div>`);
+}
+function saveDrillJournal(el) {
+  const root = document.getElementById('sheetBox');
+  const date = root.querySelector('[name="drillJournalDate"]')?.value || '';
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return alert('Wybierz datę wpisu.');
+  const drillId = root.querySelector('[name="drillJournalId"]')?.value || '';
+  const old = el.dataset.id ? byId(data.drillJournal, el.dataset.id) : null;
+  const drill = findDrill(drillId);
+  if (!drillId || (!drill && !old)) return alert('Wybierz drill z biblioteki.');
+  const record = { id: old ? old.id : 'drill-log-' + uid(), date, drillId, drillName: drill ? drill.name : old.drillName,
+    result: (root.querySelector('[name="drillJournalResult"]')?.value || '').trim(),
+    note: (root.querySelector('[name="drillJournalNote"]')?.value || '').trim(), updatedAt: Date.now() };
+  if (old) Object.assign(old, record); else data.drillJournal.push(record);
+  save(); closeSheet(); render();
+}
+function deleteTrainingJournal(el) {
+  if (!byId(data.trainingJournal, el.dataset.id) || !confirm('Usunąć ten wpis treningu?')) return;
+  data.trainingJournal = data.trainingJournal.filter(x => x.id !== el.dataset.id);
+  save(); closeSheet(); render();
+}
+function deleteDrillJournal(el) {
+  if (!byId(data.drillJournal, el.dataset.id) || !confirm('Usunąć ten wpis o drill’u?')) return;
+  data.drillJournal = data.drillJournal.filter(x => x.id !== el.dataset.id);
+  save(); closeSheet(); render();
+}
+function trainingJournalCard(entry) {
+  return `<article class="card journal-card"><div class="row keep" style="justify-content:space-between;align-items:flex-start">
+      <div class="grow"><div class="mut">${esc(koszDateLabel(entry.date))}</div><h3>${esc(entry.title || 'Trening')}</h3></div>
+      <button data-act="trainingJournalEdit" data-id="${esc(entry.id)}" aria-label="edytuj wpis treningu">✎</button></div>
+    ${entry.note ? `<div class="drill-description">${esc(entry.note).replace(/\n/g, '<br>')}</div>` : ''}
+    <div class="mut" style="margin-top:8px">Drille z treningu</div>${drillReferences(entry.drillIds, entry.drillSnapshots)}
+    <button class="danger" data-act="trainingJournalDel" data-id="${esc(entry.id)}" style="margin-top:10px">Usuń wpis</button></article>`;
+}
+function drillJournalCard(entry) {
+  const drill = findDrill(entry.drillId);
+  const name = drill ? drill.name : (entry.drillName || 'Drill usunięty');
+  const drillButton = drill ? `<button class="drill-ref" data-act="drillOpen" data-id="${esc(drill.id)}">🏀 ${esc(name)} ↗</button>` : `<span class="drill-ref missing">${esc(name)} · usunięty z biblioteki</span>`;
+  return `<article class="card journal-card"><div class="row keep" style="justify-content:space-between;align-items:flex-start">
+      <div class="grow"><div class="mut">${esc(koszDateLabel(entry.date))}</div>${drillButton}</div>
+      <button data-act="drillJournalEdit" data-id="${esc(entry.id)}" aria-label="edytuj wpis o drill’u">✎</button></div>
+    ${entry.result ? `<div class="mut" style="margin-top:8px"><b>Wynik / odczucia:</b> ${esc(entry.result)}</div>` : ''}
+    ${entry.note ? `<div class="drill-description">${esc(entry.note).replace(/\n/g, '<br>')}</div>` : ''}
+    <button class="danger" data-act="drillJournalDel" data-id="${esc(entry.id)}" style="margin-top:10px">Usuń wpis</button></article>`;
+}
+function koszDziennik() {
+  const training = [...(data.trainingJournal || [])].sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+  const drills = [...(data.drillJournal || [])].sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+  return `<div class="card journal-tools"><div class="row keep" style="gap:8px;flex-wrap:wrap">
+      <button class="pri grow" data-act="trainingJournalNew">＋ Wpis całego treningu</button>
+      <button class="grow" data-act="drillJournalNew">＋ Wpis o drill’u</button></div>
+    <div class="hint">Wpis treningu może mieć notatkę i klikalne odnośniki do wielu drillów. Osobny wpis zapisuje wynik lub szczegóły jednego drilla.</div></div>
+    <div class="sec"><h2>Treningi</h2><small>${training.length} wpisów</small></div>
+    ${training.length ? training.map(trainingJournalCard).join('') : '<div class="hint">Nie ma jeszcze wpisów treningowych.</div>'}
+    <div class="sec"><h2>Notatki do drillów</h2><small>${drills.length} wpisów</small></div>
+    ${drills.length ? drills.map(drillJournalCard).join('') : '<div class="hint">Nie ma jeszcze notatek do drillów.</div>'}`;
+}
+function drillDelete(el) {
+  const drill = findDrill(el.dataset.id);
+  if (!drill || !confirm(`Usunąć drill „${drill.name}” z biblioteki? Wpisy dziennika zachowają nazwę, ale odnośniki przestaną otwierać szczegóły.`)) return;
+  const videoId = drill.videoId;
+  data.drills = data.drills.filter(d => d.id !== drill.id);
+  save(); render();
+  if (videoId) removeDrillVideo(videoId).catch(() => {});
+}
 // === EKRAN: CIAŁO ===
 function screenCialo() {
   const sub = state.sub.cialo;
@@ -1370,10 +2105,6 @@ function healthWarnings() {
   const t = todayISO();
   const last3 = [0, 1, 2].map(i => data.days[addDays(t, -i)] && data.days[addDays(t, -i)].health).reverse();
   if (last3.every(h => h && ((h.fatigue || 0) >= 4 || (h.mood || 9) <= 2))) out.push('3 dni z rzędu źle (zmęczenie ≥4 albo nastrój ≤2). Zmniejsz obciążenie.');
-  const shots = data.shots.filter(p => p.att > 0);
-  const avg = (from, to) => { const xs = shots.filter(p => p.date >= from && p.date <= to).map(pct); return xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null; };
-  const recent = avg(addDays(t, -13), t), prev = avg(addDays(t, -27), addDays(t, -14));
-  if (recent != null && prev != null && prev - recent >= 3) out.push(`% trafień spadł z ${Math.round(prev)}% do ${Math.round(recent)}% w ostatnich 2 tygodniach.`);
   return out;
 }
 
@@ -1410,8 +2141,112 @@ function waterTargetL() {
 const fmtL = v => (Math.round(v * 100) / 100).toFixed(2).replace('.', ',') + ' l';
 // Dane produktów: nazwa, kcal / 100 g, białko, węgle, tłuszcz, waga 1 szt. (g) – wartości orientacyjne
 // Domyślna baza z pliku produkty.js (FOOD_BASE). Nowe pozycje z aktualizacji dopisują się same.
+const FOOD_SCHEMA_VERSION = 10;
 const foodFrom = ([name, kcal, p, c, f, piece]) => ({ id: uid(), name, kcal, p, c, f, piece });
 const DEFAULT_FOODS = FOOD_BASE.map(foodFrom);
+const foodNameKey = name => String(name ?? '').trim().toLowerCase();
+// Migracja foodsV 7/8/9 → 10. Zmieniamy tylko pola, które nadal mają wartość
+// domyślną ze starej bazy, aby nie nadpisywać własnych poprawek użytkownika.
+const FOOD_V10_PATCHES = {
+  'Granola': { kcal: [470, 430], c: [64, 60], f: [19, 17], piece: [40, 50] },
+  'Daktyle suszone': { p: [2.5, 2] },
+  'Jogurt grecki 2%': { kcal: [60, 59], p: [4, 9], c: [4, 3.6] },
+  'Pierś z kurczaka (pieczona)': { piece: [null, 150] },
+  'Pierś z kurczaka (surowa)': { piece: [null, 150] },
+  'Filet z indyka (pieczony)': { piece: [null, 150] },
+  'Schab pieczony': { piece: [null, 150] },
+  'Mięso mielone wołowe 5%': { piece: [null, 150] },
+  'Mięso mielone wieprzowe': { piece: [null, 150] },
+  'Mięso mielone mieszane': { piece: [null, 150] },
+  'Łosoś (pieczony)': { piece: [null, 150] },
+  'Dorsz (gotowany)': { piece: [null, 150] },
+  'Mintaj (pieczony)': { piece: [null, 150] },
+  'Ryż biały (gotowany)': { piece: [null, 200] },
+  'Ryż brązowy (gotowany)': { piece: [null, 200] },
+  'Makaron pszenny (gotowany)': { piece: [null, 200] },
+  'Makaron pełnoziarnisty (gotowany)': { piece: [null, 200] },
+  'Płatki owsiane (suche)': { piece: [null, 80] },
+  'Ziemniaki (gotowane)': { piece: [150, 200] },
+  'Odżywka białkowa (proszek, 1 miarka 30 g)': { p: [78, 75] },
+  'Bułka pszenna (zwykła)': { kcal: [280, 275], p: [9, 8], c: [55, 52], f: [2, 2.5], piece: [60, 50] },
+  'Chleb żytni': { kcal: [230, 235], p: [6, 7], piece: [30, 35] },
+  'Batonik proteinowy': { kcal: [380, 350], f: [12, 10] },
+  'Bagietka': { kcal: [270, 290], f: [1, 2], piece: [60, 50] },
+  'Kopytka': { kcal: [150, 180], c: [30, 35], f: [1, 2], piece: [null, 200] },
+  'Kluski śląskie': { kcal: [120, 170], c: [26, 38], piece: [null, 200] },
+  'Placki ziemniaczane': { kcal: [210, 230], c: [22, 28] },
+  'Musli owocowe': { kcal: [380, 370], p: [10, 9], c: [68, 65], piece: [50, 60] },
+  'Batonik zbożowy': { p: [7, 6], c: [60, 65], f: [14, 13], piece: [25, 40] },
+  'Suszone morele': { p: [3.4, 3], piece: [20, 10] },
+  'Paluszki rybne (panierowane)': { kcal: [240, 200], p: [12, 14], c: [20, 18], f: [12, 9], piece: [20, 30] },
+  'Ketchup': { p: [1.3, 1.5], c: [25, 24] },
+  'Majonez': { kcal: [680, 720], c: [2, 3], f: [75, 79] },
+  'Masło': { kcal: [740, 735], p: [0.6, 0.7], f: [82, 81] },
+  'Musztarda': { kcal: [66, 120], p: [4, 5], c: [6, 8], f: [3, 6], piece: [5, 15] }
+};
+const FOOD_V10_ALIASES = {
+  'Odżywka białkowa — 1 porcja 30 g': 'Odżywka białkowa (proszek, 1 miarka 30 g)',
+  'Bułka śniadaniowa': 'Bułka pszenna (zwykła)',
+  'Chleb żytni na zakwasie': 'Chleb żytni',
+  'Baton proteinowy': 'Batonik proteinowy',
+  'Bułka grahamka (średnia)': 'Bułka grahamka',
+  'Bagietka (kawałek)': 'Bagietka',
+  'Kopytka (gotowane)': 'Kopytka',
+  'Kluski śląskie (gotowane)': 'Kluski śląskie',
+  'Placki ziemniaczane (1 szt.)': 'Placki ziemniaczane',
+  'Musli z owocami': 'Musli owocowe',
+  'Baton zbożowy': 'Batonik zbożowy',
+  'Morela suszona': 'Suszone morele',
+  'Ryba panierowana (paluszki rybne)': 'Paluszki rybne (panierowane)',
+  'Cola (puszka 330 ml)': 'Cola',
+  'Napój energetyczny (puszka)': 'Napój energetyczny',
+  'Sok 100% pomarańczowy (szklanka)': 'Sok pomarańczowy',
+  'Ketchup (łyżka)': 'Ketchup',
+  'Majonez (łyżka)': 'Majonez',
+  'Olej rzepakowy (łyżka)': 'Olej rzepakowy',
+  'Masło (łyżka)': 'Masło',
+  'Musztarda stołowa (łyżka)': 'Musztarda'
+};
+function migrateFoods(target, sourceVersion) {
+  const version = Number(sourceVersion) || 0;
+  if (version >= FOOD_SCHEMA_VERSION) return false;
+  const foods = Array.isArray(target.foods) ? target.foods : [];
+  const patches = new Map(Object.entries(FOOD_V10_PATCHES).map(([name, patch]) => [foodNameKey(name), patch]));
+  for (const food of foods) {
+    if (!food || typeof food !== 'object') continue;
+    const patch = patches.get(foodNameKey(food.name));
+    if (!patch) continue;
+    for (const [field, [before, after]] of Object.entries(patch)) {
+      const matchesOld = Object.is(food[field], before) || (before === null && food[field] == null);
+      if (matchesOld && !Object.is(food[field], after)) food[field] = after;
+    }
+  }
+  const names = new Set(foods.map(food => foodNameKey(food && food.name)).filter(Boolean));
+  for (const row of FOOD_BASE) {
+    const name = foodNameKey(row[0]);
+    if (!name || names.has(name)) continue;
+    foods.push(foodFrom(row));
+    names.add(name);
+  }
+  const mergedAliases = new Set();
+  for (const [alias, canonical] of Object.entries(FOOD_V10_ALIASES)) {
+    const aliasKey = foodNameKey(alias), canonicalKey = foodNameKey(canonical);
+    const equivalents = foods.filter(food => foodNameKey(food && food.name) === aliasKey);
+    const preferred = foods.find(food => foodNameKey(food && food.name) === canonicalKey);
+    if (!equivalents.length || !preferred) continue;
+    for (const equivalent of equivalents) {
+      if (equivalent.favorite) preferred.favorite = true;
+      for (const [field, value] of Object.entries(equivalent)) {
+        if (['id', 'name', 'kcal', 'p', 'c', 'f', 'piece', 'favorite'].includes(field)) continue;
+        if (preferred[field] == null && value != null) preferred[field] = value;
+      }
+      mergedAliases.add(equivalent);
+    }
+  }
+  target.foods = mergedAliases.size ? foods.filter(food => !mergedAliases.has(food)) : foods;
+  target.foodsV = FOOD_SCHEMA_VERSION;
+  return true;
+}
 
 // Szukanie produktu w bazie. Odmiana jest obcinana („ryżu” → „ryż”), a słowa-wypełniacze są pomijane.
 const SYN = [[/^sznycl/, 'kotlet schabowy'], [/^kotlecik/, 'kotlet'], [/^frytk/, 'frytki']];
@@ -1444,6 +2279,15 @@ function findFood(q) {
   if (!n) return null;
   const exact = (data.foods || []).find(f => f.name.toLowerCase() === n);
   if (exact) return exact;
+  // Ogólne „kurczak/kurczaka” pozostaje zgodne wstecznie z typowym wpisem: surową piersią.
+  if (/^kurczak(?:a|u|iem)?$/.test(n)) {
+    const defaultChicken = (data.foods || []).find(f => f.name === 'Pierś z kurczaka (surowa)');
+    if (defaultChicken) return defaultChicken;
+  }
+  if (/^chleb(?:a|u|em)?$/.test(n)) {
+    const defaultBread = (data.foods || []).find(f => f.name === 'Chleb pszenny (kromka)');
+    if (defaultBread) return defaultBread;
+  }
   const words = queryWords(n);
   const top = rankFoods(n)[0];
   return top && words.length && top.hit === words.length ? top.f : null;
@@ -1949,13 +2793,22 @@ function dietaKalk() {
 
 // Baza produktów (edytowalna)
 function dietaBaza() {
-  const q = (state.foodQ || '').toLowerCase();
+  const q = (state.foodQ || '').trim().toLowerCase();
+  const onlyFavorites = state.foodFilter === 'favorites';
+  const foods = data.foods || [];
+  const favoriteCount = foods.filter(f => f.favorite).length;
   return `<input placeholder="🔍 szukaj produktu" value="${esc(state.foodQ || '')}" data-chg="foodQ" style="margin-bottom:8px">
+  <div class="food-filters" role="group" aria-label="Filtr produktów">
+    <button class="${onlyFavorites ? '' : 'pri'}" data-act="foodFilter" data-v="all" aria-pressed="${!onlyFavorites}">Wszystkie (${foods.length})</button>
+    <button class="${onlyFavorites ? 'pri' : ''}" data-act="foodFilter" data-v="favorites" aria-pressed="${onlyFavorites}">★ Moje (${favoriteCount})</button>
+  </div>
   ${listCards('foods', {
-    add: 'produkt', empty: 'Brak produktów. Dodaj swoje albo użyj „+ dodaj do bazy” przy nieznanym wpisie.',
-    filter: f => !q || f.name.toLowerCase().includes(q),
-    sort: (a, b) => a.name.localeCompare(b.name),
-    sum: f => `<div><b>${esc(f.name)}</b></div><div class="mut">na 100 g: ${f.kcal} kcal · B ${f.p} · W ${f.c} · T ${f.f}${f.piece ? ' · 1 szt. ≈ ' + f.piece + ' g' : ''}</div>`
+    add: 'produkt',
+    empty: onlyFavorites ? 'Brak ulubionych produktów. Dodaj gwiazdką przy produkcie.' : 'Brak produktów. Dodaj swoje albo użyj „+ dodaj do bazy” przy nieznanym wpisie.',
+    filter: f => (!onlyFavorites || !!f.favorite) && (!q || f.name.toLowerCase().includes(q)),
+    sort: (a, b) => Number(!!b.favorite) - Number(!!a.favorite) || a.name.localeCompare(b.name, 'pl'),
+    sum: f => `<div><b>${esc(f.name)}</b></div><div class="mut">na 100 g: ${f.kcal} kcal · B ${f.p} · W ${f.c} · T ${f.f}${f.piece ? ' · 1 szt. ≈ ' + f.piece + ' g' : ''}</div>`,
+    extra: f => `<button type="button" class="food-star${f.favorite ? ' is-fav' : ''}" data-act="foodFavorite" data-id="${esc(f.id)}" title="${f.favorite ? 'Usuń z Moich' : 'Dodaj do Moich'}" aria-label="${f.favorite ? 'Usuń z Moich' : 'Dodaj do Moich'}: ${esc(f.name)}" aria-pressed="${!!f.favorite}">${f.favorite ? '★' : '☆'}</button>`
   })}`;
 }
 
@@ -2085,7 +2938,6 @@ function revTydzien() {
         <div><div class="big">${sm.p}%</div><div class="mut">wykonanie</div></div>
         <div><div class="big">${sm.ok}/7</div><div class="mut">dni ze streakiem</div></div>
         <div><div class="big">${sm.sess}</div><div class="mut">treningi</div></div>
-        <div><div class="big">${sm.shots}</div><div class="mut">pomiary rzutu</div></div>
         <div><div class="big">${sm.sleep}</div><div class="mut">śr. sen (h)</div></div>
       </div>
       <div class="row keep" style="margin-top:12px"><button data-act="weekShift" data-n="-1">‹ poprzedni</button><button data-act="weekToday">ten</button><button data-act="weekShift" data-n="1">następny ›</button></div>
@@ -2109,25 +2961,16 @@ function revMiesiac() {
   const from = m + '-01', to = addDays(from, 31).slice(0, 7) + '-01';
   const inM = s => s >= from && s < to;
   const dl = Object.keys(data.days).filter(inM).filter(dayComplete).length;
-  const tr = data.sessions.filter(x => inM(x.date)).length;
-  const sh = data.shots.filter(x => inM(x.date));
-  const avgP = sh.length ? Math.round(sh.reduce((a, p) => a + pct(p), 0) / sh.length) : null;
-  const diags = data.diag.filter(x => inM(x.date)).sort((a, b) => a.date.localeCompare(b.date));
-  const df = diags[0], dl2 = diags[diags.length - 1];
+  const tr = data.sessions.filter(x => inM(x.date)).length + (data.trainingJournal || []).filter(x => inM(x.date)).length;
   const phys = data.phys.filter(x => inM(x.date)).sort((a, b) => a.date.localeCompare(b.date));
   const pf = phys[0], pl = phys[phys.length - 1];
   return `<div class="card">
       <label>Miesiąc</label><input type="month" data-chg="monthPick" value="${m}">
       <div class="stats" style="margin-top:12px">
         <div><div class="big">${dl}</div><div class="mut">dni ze streakiem</div></div>
-        <div><div class="big">${tr}</div><div class="mut">treningi</div></div>
-        <div><div class="big">${avgP != null ? avgP + '%' : '—'}</div><div class="mut">śr. % rzutu</div></div>
+        <div><div class="big">${tr}</div><div class="mut">zapisane treningi</div></div>
       </div>
     </div>
-    <div class="sec"><h2>Diagnoza: początek vs koniec</h2></div>
-    <div class="card">${df && dl2 && df !== dl2 ? `<table class="cmp"><tr><th>Umiejętność</th><th>${shortDate(df.date)}</th><th>${shortDate(dl2.date)}</th></tr>
-      ${data.skills.map(s => `<tr><td>${esc(s.name)}</td><td>${df.s[s.id] ?? '—'}</td><td>${dl2.s[s.id] ?? '—'}</td></tr>`).join('')}</table>`
-      : '<div class="hint">Potrzebujesz co najmniej 2 diagnoz w tym miesiącu.</div>'}</div>
     <div class="sec"><h2>Pomiary fizyczne: początek vs koniec</h2></div>
     <div class="card">${pf && pl && pf !== pl ? `<table class="cmp"><tr><th>Test</th><th>${shortDate(pf.date)}</th><th>${shortDate(pl.date)}</th></tr>
       ${PHYS_METRICS.filter(([k]) => pf[k] != null || pl[k] != null).map(([k, l]) => `<tr><td>${esc(l)}</td><td>${pf[k] ?? '—'}</td><td>${pl[k] ?? '—'}</td></tr>`).join('')}</table>`
@@ -2207,10 +3050,27 @@ async function pushNow() {
 // Pobranie z chmury: podmienia dane lokalne
 function applyRemote(remote) {
   data = JSON.parse(remote.json);
-  localStorage.setItem(KEY, remote.json);
-  setMeta({ dirty: false, syncedTs: remote.updatedAt || 0, uid: window.FB.auth.currentUser.uid, localTs: Date.now() });
-  syncSet('synced');
+  if (!Array.isArray(data.categories)) data.categories = DEFAULT_CATEGORIES.map(category => ({ ...category }));
+  if (!Array.isArray(data.reminders)) data.reminders = [];
+  if (Array.isArray(data.drills) && JSON.stringify(data.drills) === JSON.stringify(OLD_DEFAULT_DRILLS)) data.drills = [];
+  data.drills = (Array.isArray(data.drills) ? data.drills : []).map(x => typeof x === 'string'
+    ? { id: uid(), name: x, block: '', time: null, reps: '', link: '', works: '', note: '' } : x);
+  const oldKoszSchema = Number(data.koszSchemaVersion) || 0;
+  const oldFoodsVersion = Number(data.foodsV) || 0;
+  normalizeKoszData(data, data);
+  migrateFoods(data, oldFoodsVersion);
+  data.v = 7;
+  if (!Array.isArray(data.skills)) data.skills = [];
+  if (!Array.isArray(data.shots)) data.shots = [];
+  if (!Array.isArray(data.diag)) data.diag = [];
+  localStorage.setItem(KEY, JSON.stringify(data));
+  const needsSchemaPush = oldKoszSchema < KOSZ_SCHEMA_VERSION && !data.koszMigrationPending;
+  const needsDataPush = needsSchemaPush || oldFoodsVersion < FOOD_SCHEMA_VERSION;
+  setMeta({ dirty: needsDataPush, syncedTs: remote.updatedAt || 0, uid: window.FB.auth.currentUser.uid, localTs: Date.now() });
+  syncSet(needsDataPush ? 'pending' : 'synced');
   render();
+  if (needsDataPush) schedulePush();
+  cleanupOrphanDrillVideos().catch(() => {});
 }
 async function pullNow(u) {
   const fb = window.FB;
@@ -2421,14 +3281,14 @@ function screenUstaw() {
   <div class="card">
     ${[...data.template].sort((a, b) => a.from.localeCompare(b.from)).map(t => `<div class="item" data-act="blockOpen" data-s="${todayISO()}" data-k="t" data-id="${t.id}" style="cursor:pointer">
       <div class="grow"><div><b>${tm(t)}</b> · ${esc(t.name)}</div>
-      <div class="mut">${t.days.map(i => DNI[i]).join(' ')} · ${areaLabel(t.area)}</div></div><span class="mut">✎</span></div>`).join('') || '<div class="hint">Brak bloków stałych.</div>'}
+      <div class="mut">${t.days.map(i => DNI[i]).join(' ')} · ${esc(areaLabel(t.area))}</div></div><span class="mut">✎</span></div>`).join('') || '<div class="hint">Brak bloków stałych.</div>'}
     <button class="full" data-act="tplNew" style="margin-top:10px">+ Dodaj blok stały</button>
   </div>
 
   <div class="sec"><h2>Gdzie co edytować</h2></div>
   <div class="card"><div class="hint" style="margin-top:0">
-    Drille i ich lista → KOSZ › Drille · Plan hali → KOSZ › Plan hali · Skille (diagnoza) → KOSZ › Diagnoza ·
-    Treningi i punkty rutyny → CIAŁO · Wagę, dietę, kalkulator i produkty → DIETA/SEN · Cele, plan dnia → DZIŚ · Kompas → KOMPAS.
+    Biblioteka drillów i własne kategorie → KOSZ › Drille · Plany na konkretne daty → KOSZ › Plan hali · notatki i odnośniki → KOSZ › Dziennik ·
+    Treningi siłowe i rutyna → CIAŁO · Waga i dieta → DIETA/SEN · cele → DZIŚ · Kompas → KOMPAS.
   </div></div>
 
   ${themeSection()}
@@ -2436,13 +3296,12 @@ function screenUstaw() {
   ${bkCard()}
   <div class="sec"><h2>💾 Dane</h2></div>
   <div class="card">
-    <div class="hint" style="margin-top:0">Dane są na razie tylko w tej przeglądarce. Zrób backup, zanim cokolwiek zmienisz.</div>
+    <div class="hint" style="margin-top:0">Dane aplikacji zapisują się w przeglądarce, a po zalogowaniu synchronizują przez dotychczasowe konto Firebase. Filmy z galerii pozostają lokalne na urządzeniu i nie są synchronizowane. Zrób backup przed większymi zmianami.</div>
     <div class="row keep" style="flex-wrap:wrap;gap:8px;margin-top:8px">
       <button class="pri" data-act="exportJSON">Eksport JSON (backup)</button>
       <button data-act="importPick">Import JSON</button>
     </div>
     <input type="file" id="importFile" accept="application/json,.json" data-chg="importFile" style="display:none">
-    <div class="row keep" style="margin-top:8px"><button data-act="exportCSV">Eksport CSV pomiarów rzutu</button></div>
     <div class="row keep" style="margin-top:14px"><button class="danger" data-act="reset">Wyczyść wszystkie dane</button></div>
   </div>`;
 }
@@ -2450,7 +3309,7 @@ function screenUstaw() {
 // === MOTYW (kolory) ===
 // Gotowe motywy: wartości trafiają do zmiennych CSS (--bg, --acc…). Wybór i własne kolory są w USTAWIENIA.
 const THEMES = {
-  jasny: { name: 'Jasny ciepły', bg: '#fbf7f2', acc: '#ff7a3d', glow1: 'rgba(255,179,107,.22)', glow2: 'rgba(74,158,255,.10)', card: '#ffffff', card2: '#fff8f1', field: '#fffdfa', line: '#efe7dc', line2: '#e2d7c8', txt: '#2b2836', mut: '#8a8496', acc2: '#ffb36b', accTxt: '#ffffff', ok: '#22b573', okSoft: '#e9f9f1', bad: '#ef5350', badSoft: '#fff0ec', blue: '#4a9eff', blueSoft: '#eaf4ff', warnBg: '#fff0ec', warnTxt: '#9b3a24', warnLine: '#ffc7b8', heroA: '#ffe7d2', heroB: '#ffffff', chipBg: '#ffe9d6', chipTxt: '#9a4a10', panel: '#fffdf9', overlay: 'rgba(43,40,54,.4)', shadow: 'rgba(120,80,40,.22)', dark: false },
+  jasny: { name: 'Jasny (koral + śliwka)', bg: '#f8f5ff', acc: '#f04f70', glow1: 'rgba(240,79,112,.20)', glow2: 'rgba(124,92,246,.13)', card: '#ffffff', card2: '#f7f1ff', field: '#fffdfd', line: '#eae1f3', line2: '#d9c9eb', txt: '#2c2438', mut: '#81778e', acc2: '#8157e8', accTxt: '#ffffff', ok: '#14966f', okSoft: '#e5f7f0', bad: '#d9455d', badSoft: '#fff0f2', blue: '#397fce', blueSoft: '#eaf3ff', warnBg: '#fff0ec', warnTxt: '#9b3a24', warnLine: '#ffc7b8', heroA: '#ffe4ed', heroB: '#ffffff', chipBg: '#f4e6ff', chipTxt: '#672e84', panel: '#fffaff', overlay: 'rgba(37,24,51,.44)', shadow: 'rgba(76,52,97,.21)', dark: false },
   pustynia: { name: 'Pustynia (terakota)', bg: '#f4ebe0', acc: '#c2410c', glow1: 'rgba(194,65,12,.12)', glow2: 'rgba(202,138,4,.10)', card: '#fffaf3', card2: '#faf1e4', field: '#fffdf8', line: '#e6d6bf', line2: '#d6c1a2', txt: '#3b2a1e', mut: '#8c7360', acc2: '#ea7a3c', accTxt: '#ffffff', ok: '#3f8f5f', okSoft: '#e6f3ea', bad: '#b91c1c', badSoft: '#fbe5e1', blue: '#2f6fb3', blueSoft: '#e3eefb', warnBg: '#fbe7d6', warnTxt: '#7c2d12', warnLine: '#efc6a4', heroA: '#f8dcc0', heroB: '#fffaf3', chipBg: '#f5d8bd', chipTxt: '#7c2d12', panel: '#fbf5ec', overlay: 'rgba(59,42,30,.35)', shadow: 'rgba(90,60,30,.22)', dark: false },
   nocny: { name: 'Nocny granat', bg: '#0f1420', acc: '#ff8a4c', glow1: 'rgba(255,138,76,.12)', glow2: 'rgba(96,165,250,.12)', card: '#171e2d', card2: '#1d2639', field: '#111828', line: '#26304a', line2: '#34405e', txt: '#eef1f8', mut: '#8e98b3', acc2: '#ffc078', accTxt: '#1a0e04', ok: '#34d399', okSoft: '#13332a', bad: '#f87171', badSoft: '#3a1a1f', blue: '#60a5fa', blueSoft: '#13263f', warnBg: '#3a1f1c', warnTxt: '#ffc4b8', warnLine: '#6b2f25', heroA: '#2b2140', heroB: '#171e2d', chipBg: '#3a2414', chipTxt: '#ffc58a', panel: '#141a28', overlay: 'rgba(3,5,10,.6)', shadow: 'rgba(0,0,0,.5)', dark: true },
   ocean: { name: 'Ocean (morski)', bg: '#0a1622', acc: '#38bdf8', glow1: 'rgba(56,189,248,.14)', glow2: 'rgba(167,139,250,.08)', card: '#112436', card2: '#173049', field: '#0c1d2c', line: '#1f3b55', line2: '#2d4f70', txt: '#e8f4fc', mut: '#8fb0c9', acc2: '#7dd3fc', accTxt: '#03141f', ok: '#34d399', okSoft: '#10322a', bad: '#f87171', badSoft: '#3a1c22', blue: '#38bdf8', blueSoft: '#0f2d40', warnBg: '#3a2a16', warnTxt: '#fcd9a8', warnLine: '#6b4a22', heroA: '#173f5c', heroB: '#112436', chipBg: '#173f5c', chipTxt: '#bfe9ff', panel: '#0e1d2c', overlay: 'rgba(2,8,14,.6)', shadow: 'rgba(0,0,0,.5)', dark: true },
@@ -2458,6 +3317,11 @@ const THEMES = {
   wino: { name: 'Wino (bordo)', bg: '#1c1116', acc: '#ff6b8a', glow1: 'rgba(255,107,138,.12)', glow2: 'rgba(255,179,71,.08)', card: '#281820', card2: '#32202a', field: '#1f1219', line: '#442a37', line2: '#5a3646', txt: '#fbeef2', mut: '#b89aa6', acc2: '#ffa3b8', accTxt: '#2a0812', ok: '#6ee7b7', okSoft: '#163329', bad: '#ff7b7b', badSoft: '#3d1d22', blue: '#8ab4ff', blueSoft: '#1d2740', warnBg: '#3d1c25', warnTxt: '#ffc9d4', warnLine: '#7a3446', heroA: '#4a1f2e', heroB: '#281820', chipBg: '#4a1f2e', chipTxt: '#ffc2d0', panel: '#22141a', overlay: 'rgba(12,4,8,.6)', shadow: 'rgba(0,0,0,.5)', dark: true },
   sliwka: { name: 'Śliwka (fiolet)', bg: '#15101e', acc: '#a78bfa', glow1: 'rgba(167,139,250,.14)', glow2: 'rgba(244,114,182,.08)', card: '#211a31', card2: '#2a2140', field: '#1a1427', line: '#3a2f54', line2: '#4d3f6c', txt: '#f3eefc', mut: '#a79cc2', acc2: '#f0abfc', accTxt: '#1b0a2e', ok: '#4ade80', okSoft: '#13301f', bad: '#fb7185', badSoft: '#3a1d2a', blue: '#93c5fd', blueSoft: '#1c2a4a', warnBg: '#3a2232', warnTxt: '#fbcfe8', warnLine: '#6b3a5a', heroA: '#3a2a5c', heroB: '#211a31', chipBg: '#3a2a5c', chipTxt: '#e9d5ff', panel: '#1a1428', overlay: 'rgba(8,4,16,.6)', shadow: 'rgba(0,0,0,.5)', dark: true }
 };
+Object.assign(THEMES, {
+  sorbet: { ...THEMES.jasny, name: 'Sorbet (mango + koral)', bg: '#fff8ef', acc: '#ec5b4d', acc2: '#f2a51a', glow1: 'rgba(236,91,77,.17)', glow2: 'rgba(242,165,26,.14)', card2: '#fff2dd', field: '#fffcf6', line: '#f0e2cc', line2: '#e6d2b0', heroA: '#ffe8ce', chipBg: '#fff0d5', chipTxt: '#80501a', panel: '#fffaf2', shadow: 'rgba(115,78,34,.18)' },
+  mieta: { ...THEMES.jasny, name: 'Mięta (zieleń + błękit)', bg: '#f1faf7', acc: '#079477', acc2: '#4f8cff', glow1: 'rgba(7,148,119,.13)', glow2: 'rgba(79,140,255,.12)', card2: '#e8f7f2', field: '#f9fffc', line: '#d8eee6', line2: '#bfdfd4', heroA: '#dff5ec', chipBg: '#ddf4ea', chipTxt: '#08644f', panel: '#f8fffc', ok: '#138f68', okSoft: '#e1f5ed', blue: '#3575df', blueSoft: '#e6efff', shadow: 'rgba(24,100,80,.17)' },
+  aurora: { ...THEMES.nocny, name: 'Aurora (indigo + neon)', bg: '#11142a', acc: '#a58bff', acc2: '#36d9c4', glow1: 'rgba(165,139,255,.18)', glow2: 'rgba(54,217,196,.12)', card: '#191d38', card2: '#202649', field: '#151a33', line: '#2d3458', line2: '#414b76', txt: '#f1f3ff', mut: '#a2a9cb', heroA: '#29224d', chipBg: '#2b2b55', chipTxt: '#dbd3ff', panel: '#151a32', ok: '#55e6aa', okSoft: '#163a35', blue: '#64c7ff', blueSoft: '#172f4b', shadow: 'rgba(0,0,0,.5)' }
+});
 // Kolor z wyboru (akcent / tło) – reszta kolorów wylicza się z niego sama
 const hexRgb = h => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16));
 const rgbHex = c => '#' + c.map(v => Math.round(Math.max(0, Math.min(255, v))).toString(16).padStart(2, '0')).join('');
@@ -2471,6 +3335,7 @@ function themeVars() {
     v.accTxt = lumHex(u.acc) > .6 ? '#2b1400' : '#ffffff';
     v.heroA = mixHex(u.acc, v.card, .82); v.chipBg = mixHex(u.acc, v.card, .8); v.chipTxt = mixHex(u.acc, '#000000', .35);
   }
+  if (u.acc2) v.acc2 = u.acc2;
   if (u.bg) {
     const dark = lumHex(u.bg) < .5;
     v.bg = u.bg; v.dark = dark;
@@ -2484,6 +3349,17 @@ function themeVars() {
     v.heroB = v.card; v.overlay = dark ? 'rgba(0,0,0,.6)' : 'rgba(40,30,20,.35)';
     v.shadow = dark ? 'rgba(0,0,0,.5)' : 'rgba(120,80,40,.22)';
     v.heroA = u.acc ? mixHex(u.acc, v.card, .82) : mixHex(v.acc, v.card, .82);
+    // Kolory statusów i chipa muszą dopasować się także do własnego, zwłaszcza ciemnego tła.
+    v.chipBg = dark ? mixHex(u.bg, v.acc, .24) : mixHex(v.acc, u.bg, .87);
+    v.chipTxt = dark ? '#fff8ff' : mixHex(v.acc, '#25172c', .46);
+    v.ok = dark ? '#50d9a0' : '#147c58';
+    v.okSoft = mixHex(u.bg, dark ? '#28bd86' : '#31a978', dark ? .19 : .10);
+    v.bad = dark ? '#ff7c8b' : '#d94258';
+    v.badSoft = mixHex(u.bg, dark ? '#ed5268' : '#e85165', dark ? .18 : .09);
+    v.blueSoft = mixHex(u.bg, dark ? '#4e9de5' : '#579bea', dark ? .19 : .10);
+    v.warnBg = mixHex(u.bg, dark ? '#e3a842' : '#f0b04d', dark ? .17 : .19);
+    v.warnTxt = dark ? '#ffdc91' : '#78521d';
+    v.warnLine = mixHex(u.bg, dark ? '#e2a83e' : '#d99531', dark ? .45 : .38);
   }
   return v;
 }
@@ -2492,39 +3368,42 @@ function applyTheme() {
   const v = themeVars(), root = document.documentElement;
   for (const [k, val] of Object.entries(v)) if (k !== 'name' && k !== 'dark') root.style.setProperty('--' + k.replace(/[A-Z]/g, c => '-' + c.toLowerCase()), val);
   root.style.colorScheme = v.dark ? 'dark' : 'light';
+  const themeColor = document.querySelector('meta[name="theme-color"]');
+  if (themeColor) themeColor.setAttribute('content', v.bg);
 }
 function themeSection() {
   const u = data.ui, base = THEMES[u.theme] || THEMES.jasny;
-  const custom = !!(u.acc || u.bg);
+  const custom = !!(u.acc || u.acc2 || u.bg);
   return `<div class="sec"><h2>🎨 Motyw kolorów</h2><small>zmienia się od razu</small></div>
-  <div class="card">
+  <div class="card theme-card">
     <div class="themes">${Object.entries(THEMES).map(([id, t]) => `<button class="theme ${id === u.theme && !custom ? 'on' : ''}" data-act="theme" data-id="${id}">
-      <span class="sw" style="background:linear-gradient(135deg,${t.bg} 52%,${t.acc} 52%)"></span><span>${t.name}</span></button>`).join('')}</div>
-    <div class="sec" style="margin:18px 0 0"><h2>Własne kolory</h2></div>
-    <label>Kolor akcentu (przyciski, zakładki, wykresy)</label>
-    <div class="row keep"><input type="color" value="${u.acc || base.acc}" data-chg="uiColor" data-k="acc" class="colorpick" aria-label="kolor akcentu">
-      <span class="mut">${u.acc ? esc(u.acc) : 'z motywu'}</span></div>
-    <label>Kolor tła</label>
-    <div class="row keep"><input type="color" value="${u.bg || base.bg}" data-chg="uiColor" data-k="bg" class="colorpick" aria-label="kolor tła">
-      <span class="mut">${u.bg ? esc(u.bg) : 'z motywu'}</span></div>
-    <div class="hint">Tło jasne albo ciemne – reszta kolorów (karty, tekst) dopasuje się sama.</div>
-    ${custom ? '<button class="full" data-act="uiReset" style="margin-top:12px">↺ Przywróć kolory motywu</button>' : ''}
+      <span class="sw" style="background:linear-gradient(135deg,${t.bg} 0 34%,${t.acc} 34% 67%,${t.acc2} 67% 100%)"></span><span>${t.name}</span></button>`).join('')}</div>
+    <div class="sec" style="margin:18px 0 0"><h2>Własna paleta</h2><small>ustaw 3 kolory</small></div>
+    <div class="color-setting"><div><label>Kolor główny</label><div class="mut">Przyciski i wyróżnienia</div></div>
+      <input type="color" value="${u.acc || base.acc}" data-chg="uiColor" data-k="acc" class="colorpick" aria-label="kolor główny"></div>
+    <div class="color-setting"><div><label>Kolor uzupełniający</label><div class="mut">Gradienty i detale</div></div>
+      <input type="color" value="${u.acc2 || base.acc2}" data-chg="uiColor" data-k="acc2" class="colorpick" aria-label="kolor uzupełniający"></div>
+    <div class="color-setting"><div><label>Kolor tła</label><div class="mut">Karty i tekst dopasują się automatycznie</div></div>
+      <input type="color" value="${u.bg || base.bg}" data-chg="uiColor" data-k="bg" class="colorpick" aria-label="kolor tła"></div>
+    ${custom ? '<button class="full" data-act="uiReset" style="margin-top:14px">↺ Przywróć kolory wybranego motywu</button>' : ''}
   </div>`;
 }
 
 // === EKRAN – ROUTING I RENDER ===
 const state = {
   screen: 'dzis', date: todayISO(), week: mondayOf(todayISO()),
-  chartDrill: null, foodQ: '', drillBlock: '', dop: null, wk: null, exName: null, physM: 'vert', month: null,
-  sub: { kosz: 'pomiary', cialo: 'trening', dieta: 'dzis', biznes: 'dzis', przeglad: 'tydzien' }
+  chartDrill: null, foodQ: '', foodFilter: 'all', drillBlock: '', drillCategoryId: '', dop: null, wk: null, exName: null, physM: 'vert', month: null,
+  activeDrillDetailId: null,
+  sub: { kosz: 'drille', cialo: 'trening', dieta: 'dzis', biznes: 'dzis', przeglad: 'tydzien' }
 };
 let data = load();
-const SCREENS = { dzis: screenDzis, tydzien: screenTydzien, kosz: screenKosz, cialo: screenCialo, dieta: screenDieta,
+let lastRenderedScreen = null;
+const SCREENS = { dzis: screenDzis, tydzien: screenTydzien, przypomnienia: screenPrzypomnienia, kosz: screenKosz, cialo: screenCialo, dieta: screenDieta,
   biznes: screenBiznes, kompas: screenKompas, przeglad: screenPrzeglad, ustaw: screenUstaw };
-const TITLES = { dzis: 'Dziś', tydzien: 'Tydzień', kosz: 'Kosz', cialo: 'Ciało', dieta: 'Dieta / Sen', biznes: 'Biznes',
+const TITLES = { dzis: 'Dziś', tydzien: 'Tydzień', przypomnienia: 'Przypomnienia', kosz: 'Kosz', cialo: 'Ciało', dieta: 'Dieta / Sen', biznes: 'Biznes',
   kompas: 'Kompas', przeglad: 'Przegląd', ustaw: 'Ustawienia' };
 const DRAWER_GROUPS = [
-  ['Codziennie', ['dzis', 'tydzien']],
+  ['Codziennie', ['dzis', 'tydzien', 'przypomnienia']],
   ['Trening', ['kosz', 'cialo']],
   ['Życie', ['dieta', 'biznes', 'kompas', 'przeglad']],
   ['Reszta', ['ustaw']]
@@ -2532,9 +3411,23 @@ const DRAWER_GROUPS = [
 
 function render() {
   applyTheme();
-  document.getElementById('app').innerHTML = SCREENS[state.screen]();
+  const appRoot = document.getElementById('app');
+  const screenChanged = lastRenderedScreen !== state.screen;
+  appRoot.classList.remove('screen-enter');
+  appRoot.innerHTML = SCREENS[state.screen]();
+  if (screenChanged) {
+    void appRoot.offsetWidth; // uruchom wejście tylko przy zmianie ekranu, nie przy każdym kliknięciu
+    appRoot.classList.add('screen-enter');
+  }
+  lastRenderedScreen = state.screen;
   // Tydzień używa całej szerokości strony (7 kolumn bez przewijania)
-  document.getElementById('app').classList.toggle('wide', state.screen === 'tydzien');
+  appRoot.classList.toggle('wide', state.screen === 'tydzien');
+  const mainNav = document.getElementById('mainNav');
+  if (mainNav && typeof mainNav.querySelectorAll === 'function') mainNav.querySelectorAll('[data-to]').forEach(button => {
+    const active = button.dataset.to === state.screen;
+    button.classList.toggle('on', active);
+    button.setAttribute('aria-current', active ? 'page' : 'false');
+  });
   document.getElementById('chip').innerHTML = flameIcon(16) + ' ' + streaks().cur;
   renderTimer();
   if (!document.getElementById('drawer').classList.contains('hidden')) renderDrawer();
@@ -2543,9 +3436,20 @@ function renderDrawer() {
   document.getElementById('drawerBox').innerHTML = `
     <div class="dhead"><div class="dbrand"><div class="logo">Life <b>OS</b></div></div><button class="x" data-act="drawer" aria-label="zamknij">✕</button></div>
     ${DRAWER_GROUPS.map(([g, ids]) => `<div class="dgroup">${g}</div>${ids.map(id =>
-      `<button class="dlink ${state.screen === id ? 'on' : ''}" data-act="go" data-to="${id}"><span class="ico">${ICON[id]}</span>${TITLES[id]}</button>`).join('')}`).join('')}`;
+      `<button class="dlink ${state.screen === id ? 'on' : ''}" data-act="go" data-to="${id}"><span class="ico" aria-hidden="true">${ICON[id]}</span>${TITLES[id]}</button>`).join('')}`).join('')}`;
 }
-const ICON = { dzis: '🏠', tydzien: '📅', kosz: '🏀', cialo: '💪', dieta: '🥗', biznes: '💼', kompas: '🧭', przeglad: '📊', ustaw: '⚙️' };
+const ICON = {
+  dzis: '<svg viewBox="0 0 24 24"><path d="m3 10 9-7 9 7M5 9.5V21h14V9.5M9 21v-7h6v7"/></svg>',
+  tydzien: '<svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="3"/><path d="M16 3v4M8 3v4M3 10h18M8 14h2M14 14h2M8 17h2"/></svg>',
+  przypomnienia: '<svg viewBox="0 0 24 24"><path d="M18 9a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4M12 3V1"/></svg>',
+  kosz: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3v18M5.6 5.6a9 9 0 0 1 12.8 12.8M18.4 5.6A9 9 0 0 0 5.6 18.4"/></svg>',
+  cialo: '<svg viewBox="0 0 24 24"><path d="M6 9v6M3.5 10v4M18 9v6m2.5-5v4M6 12h12"/></svg>',
+  dieta: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="4"/><path d="M3 4v6M1 7h4M21 4v7a2 2 0 0 1-2 2v7"/></svg>',
+  biznes: '<svg viewBox="0 0 24 24"><rect x="3" y="7" width="18" height="14" rx="2"/><path d="M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M3 12h18M10 12v2h4v-2"/></svg>',
+  kompas: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="m15.5 8.5-2 5-5 2 2-5z"/></svg>',
+  przeglad: '<svg viewBox="0 0 24 24"><path d="M4 20V4M4 20h17"/><rect x="7" y="12" width="3" height="6" rx="1"/><rect x="13" y="8" width="3" height="10" rx="1"/><rect x="19" y="5" width="2" height="13" rx="1"/></svg>',
+  ustaw: '<svg viewBox="0 0 24 24"><path d="M12 8.5a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7Z"/><path d="m19.4 15 .1.1a1.7 1.7 0 1 1-2.4 2.4l-.1-.1a1.7 1.7 0 0 0-2.9 1.2v.2a1.7 1.7 0 1 1-3.4 0v-.2a1.7 1.7 0 0 0-2.9-1.2l-.1.1a1.7 1.7 0 1 1-2.4-2.4l.1-.1A1.7 1.7 0 0 0 4.2 12H4a1.7 1.7 0 1 1 0-3.4h.2a1.7 1.7 0 0 0 1.2-2.9l-.1-.1a1.7 1.7 0 1 1 2.4-2.4l.1.1a1.7 1.7 0 0 0 2.9-1.2V2a1.7 1.7 0 1 1 3.4 0v.2a1.7 1.7 0 0 0 2.9 1.2l.1-.1a1.7 1.7 0 1 1 2.4 2.4l-.1.1a1.7 1.7 0 0 0 1.2 2.9h.2a1.7 1.7 0 1 1 0 3.4h-.2a1.7 1.7 0 0 0-1.2 2.9Z"/></svg>'
+};
 function toggleDrawer(open) {
   const dr = document.getElementById('drawer');
   const show = open ?? dr.classList.contains('hidden');
@@ -2557,8 +3461,8 @@ function toggleDrawer(open) {
 const ACT = {
   go: el => { state.screen = el.dataset.to; toggleDrawer(false); window.scrollTo(0, 0); render(); },
   drawer: () => toggleDrawer(),
-  theme: el => { data.ui.theme = el.dataset.id; data.ui.acc = null; data.ui.bg = null; save(); render(); },
-  uiReset: () => { data.ui.acc = null; data.ui.bg = null; save(); render(); },
+  theme: el => { data.ui.theme = el.dataset.id; data.ui.acc = null; data.ui.acc2 = null; data.ui.bg = null; save(); render(); },
+  uiReset: () => { data.ui.acc = null; data.ui.acc2 = null; data.ui.bg = null; save(); render(); },
 
   // --- Trening: aktywna sesja ---
   sessStart: el => {
@@ -2692,14 +3596,74 @@ const ACT = {
   netSearch: el => netSearch(el),
   netUse: el => netUse(el),
   foodFromUnknown: el => foodFromUnknown(el),
+  foodFavorite: el => {
+    const food = byId(data.foods, el.dataset.id);
+    if (!food) return;
+    food.favorite = !food.favorite;
+    save(); render();
+  },
+  foodFilter: el => { state.foodFilter = el.dataset.v === 'favorites' ? 'favorites' : 'all'; render(); },
   aiOpen: el => aiOpen(el),
   aiCopy: () => aiCopy(),
   aiImport: el => aiImport(el),
   sub: el => { state.sub[el.dataset.s] = el.dataset.v; render(); },
   dayShift: el => { state.date = addDays(state.date, +el.dataset.n); render(); },
   dayToday: () => { state.date = todayISO(); render(); },
+  dayManual: el => {
+    const s = el.dataset.s || state.date, d = day(s);
+    if (s > todayISO() && !d.manualComplete) return;
+    if (d.manualComplete) delete d.manualComplete;
+    else if (!dayComplete(s)) d.manualComplete = true;
+    save(); render();
+  },
   weekShift: el => { state.week = addDays(state.week, 7 * +el.dataset.n); render(); },
   weekToday: () => { state.week = mondayOf(todayISO()); render(); },
+  reminderNew: () => openReminder(),
+  reminderQuick: () => { state.screen = 'przypomnienia'; render(); openReminder(); },
+  jumpTo: el => {
+    const target = document.getElementById(el.dataset.target);
+    if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  },
+  reminderEdit: el => openReminder(el.dataset.id),
+  reminderSave: el => {
+    const f = readReminderForm();
+    if (!f.title) return alert('Wpisz treść przypomnienia.');
+    if (!f.time) return alert('Ustaw godzinę przypomnienia.');
+    if (f.repeat === 'once' && !f.date) return alert('Wybierz datę przypomnienia.');
+    if (f.repeat === 'weekly' && !f.days.length) return alert('Zaznacz co najmniej jeden dzień tygodnia.');
+    const existing = el.dataset.id ? byId(data.reminders, el.dataset.id) : null;
+    let timeZone = 'Europe/Warsaw';
+    try { timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || timeZone; } catch (e) { /* zostaje domyślna strefa */ }
+    const reminder = {
+      id: existing ? existing.id : uid(), title: f.title, body: f.body, time: f.time,
+      repeat: f.repeat, date: f.repeat === 'once' ? f.date : '', days: f.repeat === 'weekly' ? f.days : [],
+      timeZone, enabled: existing ? existing.enabled !== false : true,
+      createdAt: existing ? existing.createdAt : Date.now(), updatedAt: Date.now()
+    };
+    data.reminders = Array.isArray(data.reminders) ? data.reminders : [];
+    if (existing) Object.assign(existing, reminder); else data.reminders.push(reminder);
+    save(); closeSheet(); render();
+  },
+  reminderToggle: el => {
+    const reminder = byId(data.reminders, el.dataset.id);
+    if (reminder) { reminder.enabled = reminder.enabled === false; reminder.updatedAt = Date.now(); save(); render(); }
+  },
+  reminderDelete: el => {
+    if (!confirm('Usunąć to przypomnienie?')) return;
+    data.reminders = (data.reminders || []).filter(r => r.id !== el.dataset.id);
+    save(); render();
+  },
+  pushEnable: async () => {
+    if (!/Android/i.test(navigator.userAgent || '')) return alert('Włącz powiadomienia, otwierając Life OS na Androidzie.');
+    if (!window.FB || !window.FB.enablePush) return alert('Firebase Messaging nie jest gotowy. Odśwież stronę i spróbuj ponownie.');
+    try { await window.FB.enablePush(); render(); alert('Powiadomienia włączone na tym Androidzie.'); }
+    catch (e) { alert('Nie udało się włączyć powiadomień: ' + (e.message || e)); }
+  },
+  pushDisable: async () => {
+    if (!window.FB || !window.FB.disablePush) return;
+    try { await window.FB.disablePush(); render(); alert('Powiadomienia wyłączone na tym Androidzie.'); }
+    catch (e) { alert('Nie udało się wyłączyć powiadomień: ' + (e.message || e)); }
+  },
   evOk: el => { day(state.date).ev.ok = +el.dataset.v; save(); render(); },
   unhide: el => { Object.values(day(el.dataset.s).done).forEach(o => delete o.hidden); save(); render(); },
   water: el => { const d = day(state.date); d.diet.waterL = Math.max(0, Math.round(((d.diet.waterL || 0) + +el.dataset.n) * 100) / 100); save(); render(); },
@@ -2721,13 +3685,42 @@ const ACT = {
     save(); render();
   },
   blockOpen: el => openBlock(el.dataset.s, el.dataset.k, el.dataset.id),
+  categoryAdd: el => {
+    const input = document.querySelector('#sheet [name="newCategory"]');
+    const select = document.querySelector('#sheet [name="area"]');
+    if (!input || !select) return;
+    const label = input.value.trim();
+    if (!label) return alert('Wpisz nazwę kategorii.');
+    let area;
+    if (el.dataset.mode === 'permanent') {
+      data.categories = Array.isArray(data.categories) ? data.categories : [];
+      let category = data.categories.find(c => normalizeCategoryName(c.label) === normalizeCategoryName(label));
+      if (!category) {
+        category = { id: 'cat-' + uid(), label };
+        data.categories.push(category);
+        save();
+      }
+      area = category.id;
+    } else {
+      area = TEMP_AREA_PREFIX + label;
+    }
+    let option = Array.from(select.options).find(o => o.value === area);
+    if (!option) {
+      option = document.createElement('option');
+      option.value = area;
+      option.textContent = el.dataset.mode === 'temporary' ? `${label} · tylko ta aktywność` : label;
+      select.appendChild(option);
+    }
+    select.value = area;
+    input.value = '';
+  },
   blockSave: el => blockSave(el),
   blockDel: el => blockDel(el),
   extraNew: el => openExtra(el.dataset.s || state.date),
   extraAdd: el => {
     const f = readForm();
     if (!f.name) return alert('Wpisz nazwę bloku.');
-    day(el.dataset.s).extra.push({ id: uid(), name: f.name, from: f.from, to: f.to, area: f.area, done: false, rating: 0, note: '' });
+    day(el.dataset.s).extra.push({ id: uid(), name: f.name, from: f.from, to: f.to, area: f.area, done: false, note: '' });
     save(); closeSheet(); render();
   },
   tplNew: () => openTpl(),
@@ -2740,7 +3733,13 @@ const ACT = {
   },
   syncLogin: () => syncAuth('login'),
   syncRegister: () => syncAuth('register'),
-  syncLogout: async () => { if (window.FB) await window.FB.signOut(); syncSet('local'); render(); },
+  syncLogout: async () => {
+    if (window.FB && localStorage.getItem('lifeos.pushToken')) {
+      try { await window.FB.disablePush(); } catch (e) { console.warn('Nie udało się usunąć push tokenu przy wylogowaniu.', e); }
+    }
+    if (window.FB) await window.FB.signOut();
+    syncSet('local'); render();
+  },
   syncNow: () => { const u = window.FB && window.FB.auth.currentUser; if (u) pullNow(u); },
   sheetClose: () => closeSheet(),
 
@@ -2748,6 +3747,30 @@ const ACT = {
   recEdit: el => openRec(el.dataset.c, el.dataset.id),
   recSave: el => recSave(el),
   recDel: el => recDel(el),
+  koszLegacyExport: () => koszLegacyExport(),
+  koszLegacyClear: () => koszLegacyClear(),
+  drillCategoryManager: () => openDrillCategoryManager(),
+  drillCategoryNew: () => openDrillCategoryForm(),
+  drillCategoryEdit: el => openDrillCategoryForm(el.dataset.id),
+  drillCategorySave: el => saveDrillCategory(el),
+  drillCategoryDel: el => deleteDrillCategory(el),
+  drillNew: () => openDrillEditor(),
+  drillEdit: el => openDrillEditor(el.dataset.id),
+  drillSave: el => saveDrill(el),
+  drillDel: el => drillDelete(el),
+  drillOpen: el => openDrillDetail(el.dataset.id),
+  hallPlanNew: () => openHallPlan(),
+  hallPlanEdit: el => openHallPlan(el.dataset.id),
+  hallPlanSave: el => saveHallPlan(el),
+  hallPlanDel: el => deleteHallPlan(el),
+  trainingJournalNew: () => openTrainingJournal(),
+  trainingJournalEdit: el => openTrainingJournal(el.dataset.id),
+  trainingJournalSave: el => saveTrainingJournal(el),
+  trainingJournalDel: el => deleteTrainingJournal(el),
+  drillJournalNew: el => openDrillJournal('', el.dataset.id || ''),
+  drillJournalEdit: el => openDrillJournal(el.dataset.id),
+  drillJournalSave: el => saveDrillJournal(el),
+  drillJournalDel: el => deleteDrillJournal(el),
   // --- Trening: wybór i ćwiczenia wybranego treningu ---
   wkSelect: el => { state.wk = el.dataset.id; exIdx = null; save(); render(); window.scrollTo(0, 0); },
   trEdit: el => { exIdx = +el.dataset.i; render(); },
@@ -2889,7 +3912,7 @@ const ACT = {
   exportCSV: () => exportCSV(),
   importPick: () => document.getElementById('importFile').click(),
   reset: () => {
-    if (confirm('Na pewno usunąć WSZYSTKIE dane? Najpierw zrób eksport JSON.')) { bkMake('przed wyczyszczeniem'); data = DEFAULTS(); save(); render(); }
+    if (confirm('Na pewno usunąć WSZYSTKIE dane? Najpierw zrób eksport JSON.')) { bkMake('przed wyczyszczeniem'); data = DEFAULTS(); save(); render(); cleanupOrphanDrillVideos().catch(() => {}); }
   }
 };
 
@@ -2900,7 +3923,23 @@ const CHG = {
   statP: (el) => { const p = statP(); if (el.dataset.f === 'n') p.n = Math.max(1, parseInt(el.value, 10) || 1); else p.unit = el.value; render(); },
   min: el => { day(state.date).min[el.dataset.id] = el.checked; save(); render(); },
   bdone: el => { setBlock(el.dataset.s, el.dataset.k, el.dataset.id, { done: el.checked }); render(); },
-  brate: el => { setBlock(el.dataset.s, el.dataset.k, el.dataset.id, { rating: +el.value }); render(); },
+  dayRating: el => {
+    const raw = String(el.value).trim();
+    const ev = day(state.date).ev;
+    if (!raw) { ev.dayRating = ''; save(); return; }
+    const n = Number(raw);
+    if (!Number.isFinite(n)) return;
+    const rating = Math.max(1, Math.min(10, Math.round(n)));
+    el.value = String(rating);
+    ev.dayRating = rating;
+    save();
+  },
+  remRepeat: el => {
+    const dateFields = document.getElementById('remDateFields');
+    const dayFields = document.getElementById('remDaysFields');
+    if (dateFields) dateFields.classList.toggle('hidden', el.value !== 'once');
+    if (dayFields) dayFields.classList.toggle('hidden', el.value !== 'weekly');
+  },
   ev: el => { day(state.date).ev[el.dataset.f] = el.value; save(); },
   goalDone: el => { const g = byId(day(el.dataset.s).goals, el.dataset.id); if (g) { g.done = el.checked; save(); render(); } },
   goalTxt: el => { const g = byId(day(el.dataset.s).goals, el.dataset.id); if (g) { g.t = el.value.trim() || g.t; save(); render(); } },
@@ -2919,6 +3958,7 @@ const CHG = {
   minLabel: el => { const m = byId(data.minimum, el.dataset.id); if (m) { m.label = el.value.trim() || m.label; save(); render(); } },
   chartDrill: el => { state.chartDrill = el.value; render(); },
   drillBlock: el => { state.drillBlock = el.value; render(); },
+  drillCategoryId: el => { state.drillCategoryId = el.value; render(); },
   wkpick: el => { state.wk = el.value; render(); },
   mealRename: el => {
     const { s, m } = el.dataset, list = dayMeals(s).map(y => ({ ...y })), x = list.find(y => y.id === m);
@@ -2975,10 +4015,9 @@ function readForm() {
     name: q('name') ? q('name').value.trim() : '',
     from: q('from') ? q('from').value : '',
     to: q('to') ? q('to').value : '',
-    area: q('area') ? q('area').value : 'inne',
+    area: q('area') ? q('area').value : '',
     days: [...document.querySelectorAll('#sheet [name="days"]:checked')].map(x => +x.value),
     done: !!(q('done') && q('done').checked),
-    rating: q('rating') ? +q('rating').value : 0,
     note: q('note') ? q('note').value : ''
   };
 }
@@ -2990,7 +4029,7 @@ function pickScope(el) {
 function blockSave(el) {
   const { s, k, id } = el.dataset, scope = pickScope(el);
   const f = readForm(), d = day(s);
-  const common = { done: f.done, rating: f.rating, note: f.note };
+  const common = { done: f.done, note: f.note };
   if (k === 'x') {
     const e = byId(d.extra, id);
     if (e) Object.assign(e, { name: f.name || e.name, from: f.from, to: f.to, area: f.area }, common);
@@ -3071,12 +4110,12 @@ function importFile(el) {
   r.onload = () => {
     try {
       const obj = JSON.parse(r.result);
-      if (!obj || ![1, 2, 3, 4, 5, 6].includes(obj.v)) throw new Error('to nie jest backup Life OS');
+      if (!obj || ![1, 2, 3, 4, 5, 6, 7].includes(obj.v)) throw new Error('to nie jest backup Life OS');
       if (!confirm('Zaimportować i NADPISAĆ obecne dane?')) return;
       bkMake('przed importem');
       localStorage.setItem(KEY, JSON.stringify(obj));
       data = load();
-      save(); render();
+      save(); render(); cleanupOrphanDrillVideos().catch(() => {});
       alert('Import OK.');
     } catch (err) {
       alert('Import nieudany: ' + err.message);

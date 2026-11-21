@@ -10,3 +10,10 @@ export const firebaseConfig = {
   appId: "1:755770625728:web:04fe72b298a72811a1a725",
   measurementId: "G-Y5HNVY2SF7"
 };
+
+// Public VAPID key from Firebase Console → Project settings → Cloud Messaging.
+// Fill this in before enabling web push on Android; it is not a private server key.
+export const webPushVapidKey = "";
+
+// Set true only after the scheduled Cloud Function is deployed to this Firebase project.
+export const pushBackendDeployed = false;

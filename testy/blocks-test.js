@@ -52,14 +52,14 @@ const sheetTpl = vm.runInContext("(function(){ let h=''; const orig=openSheet; o
 ok(!/16:00|17:00/.test(sheetTpl), 'nowy blok stały: brak 16:00–17:00');
 ok(/name="from" value=""/.test(sheetTpl) && /name="to" value=""/.test(sheetTpl), 'pola czasu puste');
 
-// --- „tylko dziś”: nazwa, obszar, godziny, status, ocena, notatka ---
+// --- „tylko dziś”: nazwa, kategoria, godziny, status i notatka (ocena jest dzienna) ---
 reset();
-form = { name: 'Trening zmieniony', from: '10:00', to: '11:30', area: 'biznes', done: 'x', done_on: true, rating: 4, note: 'dobrze' };
+form = { name: 'Trening zmieniony', from: '10:00', to: '11:30', area: 'biznes', done: 'x', done_on: true, note: 'dobrze' };
 ctx.X.readForm && 0;
 X.blockSave({ dataset: { s: d1, k: 't', id: 't1', scope: 'day' } });
 const bDay = X.blocksFor(d1).find(b => b.id === 't1');
 ok(bDay && bDay.name === 'Trening zmieniony' && bDay.from === '10:00' && bDay.to === '11:30', 'tylko dziś: nazwa i godziny zapisane w dniu');
-ok(bDay && bDay.area === 'biznes' && bDay.done === true && bDay.rating === 4 && bDay.note === 'dobrze', 'tylko dziś: obszar, status, ocena, notatka zapisane');
+ok(bDay && bDay.area === 'biznes' && bDay.done === true && bDay.note === 'dobrze' && bDay.rating === 0, 'tylko dziś: kategoria, status i notatka zapisane bez oceny aktywności');
 const bOther = X.blocksFor(d2).find(b => b.id === 't1');
 ok(bOther && bOther.name === 'Trening' && bOther.from === '' && bOther.area === 'kosz' && !bOther.done, 'inne dni bez zmian (szablon nietknięty)');
 ok(X.data.template[0].name === 'Trening' && X.data.template[0].from === '', 'szablon nie zmieniony przez „tylko dziś”');
