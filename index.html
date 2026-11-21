@@ -39,14 +39,18 @@ h1{font-size:30px;line-height:1.1;margin:12px 2px 4px;letter-spacing:-.02em;font
 h1+.sub{color:var(--mut);margin:0 2px 16px;font-size:15px}
 
 /* ============ NAGŁÓWEK ============ */
-.top{position:sticky;top:0;z-index:5;display:flex;justify-content:space-between;align-items:center;gap:10px;
-  padding:12px 16px;background:color-mix(in srgb,var(--card) 80%,transparent);backdrop-filter:blur(14px) saturate(160%);-webkit-backdrop-filter:blur(14px);
+.top{position:sticky;top:0;z-index:5;display:grid;grid-template-columns:minmax(0,1fr) minmax(250px,auto) minmax(0,1fr);align-items:center;gap:10px;
+  padding:10px 16px;background:color-mix(in srgb,var(--card) 80%,transparent);backdrop-filter:blur(14px) saturate(160%);-webkit-backdrop-filter:blur(14px);
   border-bottom:1px solid var(--line)}
-.top .left{display:flex;align-items:center;gap:12px}
+.top .left{grid-column:1;grid-row:1;display:flex;align-items:center;gap:12px}
+.top .right{grid-column:3;grid-row:1;justify-content:flex-end}
+.top-motto{grid-column:2;grid-row:1;display:flex;min-width:0;flex-direction:column;align-items:center;gap:2px;text-align:center;line-height:1.15}
+.top-motto-title{font-size:16px;font-weight:900;letter-spacing:.015em;color:var(--acc);white-space:nowrap}
+.top-motto-quote{font-size:13px;font-weight:800;letter-spacing:.005em;color:var(--txt);white-space:nowrap}
 .logo{font-weight:900;font-size:19px;letter-spacing:-.01em}
 .logo b{background:linear-gradient(90deg,var(--acc),var(--acc2));-webkit-background-clip:text;background-clip:text;color:transparent}
 .top .right{display:flex;align-items:center;gap:8px}
-.chip{background:var(--chip-bg);color:var(--chip-txt);border-radius:999px;padding:7px 14px;font-weight:800;font-size:15px;white-space:nowrap;box-shadow:0 4px 12px -6px var(--acc)}
+.chip{display:inline-flex;align-items:center;gap:7px;background:linear-gradient(135deg,var(--chip-bg),color-mix(in srgb,var(--chip-bg) 78%,var(--acc2) 22%));color:var(--chip-txt);border:1px solid color-mix(in srgb,var(--acc2) 30%,transparent);border-radius:999px;padding:7px 14px;font-weight:800;font-size:15px;white-space:nowrap;box-shadow:0 4px 12px -6px var(--acc);transition:background .25s,color .25s,border-color .25s}
 .iconbtn{width:44px;height:44px;min-width:44px;min-height:44px;padding:0;border-radius:15px;display:grid;place-items:center;font-size:20px;background:var(--card);border:1px solid var(--line);box-shadow:0 2px 8px -4px var(--shadow)}
 
 /* pasek timera */
@@ -71,6 +75,27 @@ h1+.sub{color:var(--mut);margin:0 2px 16px;font-size:15px}
 .exname{font-size:18px;font-weight:800;letter-spacing:-.01em}
 .lasttxt{margin-top:8px;display:inline-block;background:var(--ok-soft);color:var(--ok);border-radius:10px;padding:4px 10px;font-size:14px;font-weight:700}
 .hero-live{background:linear-gradient(135deg,var(--hero-a),var(--card) 80%);border:1px solid var(--line2);border-radius:var(--r);padding:16px 18px;margin-bottom:14px;box-shadow:0 2px 6px -2px var(--shadow)}
+.category-add-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px}
+.category-add-actions button{min-height:42px;padding:8px 10px;font-size:13.5px;line-height:1.25}
+.manual-day-wrap{margin:8px 0 18px}
+.manual-day-wrap .hint{margin:6px 2px}
+.day-complete{width:100%;min-height:40px;padding:8px 10px;margin:0 0 6px;border-radius:12px;font-size:13.5px}
+.day-complete.is-manual,.day-complete.is-done{background:linear-gradient(135deg,var(--ok-soft),color-mix(in srgb,var(--ok-soft) 76%,var(--card)));border-color:color-mix(in srgb,var(--ok) 74%,var(--line));color:var(--ok);box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--ok) 14%,transparent),0 3px 12px -9px var(--ok)}
+.day-complete:disabled{opacity:.85;cursor:default}
+.day-rating-row{display:flex;align-items:center;gap:10px}
+.day-rating-row input{width:100px;max-width:100px;flex:0 0 100px;text-align:center;font-size:20px;font-weight:800}
+.day-rating-row .mut{flex:1}
+.reminder-item{display:flex;align-items:center;gap:12px;padding:12px 2px;border-bottom:1px solid var(--line)}
+.reminder-item:last-of-type{border-bottom:0}
+.reminder-item.off{opacity:.58}
+.reminder-time{min-width:68px;font-size:21px;font-weight:900;font-variant-numeric:tabular-nums}
+.reminder-title{font-size:16px;font-weight:800;overflow-wrap:anywhere}
+.reminder-body{margin-top:4px;color:var(--mut);font-size:14px;white-space:pre-wrap;overflow-wrap:anywhere}
+.reminder-actions{display:flex;align-items:center;gap:4px}
+.reminder-actions button{min-width:38px;min-height:38px;padding:4px 8px;border-radius:12px}
+.push-card .big{font-size:18px}
+@media(max-width:520px){.reminder-item{align-items:flex-start;flex-wrap:wrap}.reminder-actions{width:100%;justify-content:flex-end}.reminder-time{min-width:64px}}
+@media(max-width:450px){.category-add-actions{grid-template-columns:1fr}.day-rating-row{align-items:stretch;flex-direction:column}.day-rating-row input{width:100%;max-width:none;flex-basis:auto}}
 
 /* ============ DATA ============ */
 .datebar{display:flex;justify-content:space-between;align-items:center;gap:8px;margin:4px 0 16px;
@@ -140,6 +165,10 @@ label{display:block;font-size:13px;color:var(--mut);margin:14px 0 6px;font-weigh
 .item:last-child{border-bottom:0}
 .item:hover{background:var(--card2)}
 .item.done .t{text-decoration:line-through;color:var(--mut)}
+.food-filters{display:flex;gap:8px;margin:0 0 8px}
+.food-filters button{flex:1;min-height:42px;padding:8px 12px;font-size:14px}
+button.food-star{flex:0 0 44px;min-width:44px;min-height:44px;padding:0;display:grid;place-items:center;border-radius:14px;font-size:24px;line-height:1;box-shadow:none;color:var(--mut)}
+button.food-star.is-fav{color:var(--acc);background:color-mix(in srgb,var(--acc) 12%,var(--card));border-color:var(--acc2)}
 .gtxt{background:transparent;border:1px solid transparent;padding:6px 8px;min-height:40px}
 .gtxt:focus{border-color:var(--line2);background:var(--field)}
 .addrow{display:flex;gap:10px;margin-top:12px}
@@ -200,6 +229,7 @@ label{display:block;font-size:13px;color:var(--mut);margin:14px 0 6px;font-weigh
 .dlink:hover{background:var(--card);border-color:var(--line);box-shadow:0 2px 8px -4px var(--shadow)}
 .dlink.on{background:linear-gradient(135deg,var(--chip-bg),var(--card));border-color:var(--acc);color:var(--chip-txt)}
 .dlink .ico{font-size:19px;width:42px;height:42px;display:grid;place-items:center;border-radius:14px;background:var(--card);border:1px solid var(--line);flex:0 0 42px;box-shadow:0 2px 6px -3px var(--shadow)}
+.dlink .ico svg{width:21px;height:21px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
 .dlink.on .ico{background:linear-gradient(135deg,var(--acc),var(--acc2));border-color:transparent}
 
 /* ============ OKNO (sheet) ============ */
@@ -254,6 +284,184 @@ main.wide{max-width:none}
 #syncBadge.sync-pending .dot,#syncBadge.sync-checking .dot{background:#e6a100}
 #syncBadge.sync-offline .dot{background:#888}
 #syncBadge.sync-error .dot{background:#e5484d}
+.flame-icon{display:block;overflow:visible;filter:drop-shadow(0 2px 3px color-mix(in srgb,var(--acc) 42%,transparent));transform-origin:50% 84%}
+#chip .flame-icon{animation:flame-flicker 2.8s ease-in-out infinite}
+@keyframes flame-flicker{0%,100%{transform:rotate(-2deg) scale(1)}50%{transform:rotate(2deg) scale(1.06)}}
+/* Główna nawigacja pozostaje widoczna — Przypomnienia nie są już schowane wyłącznie w menu. */
+main{padding-bottom:calc(148px + env(safe-area-inset-bottom))}
+#mainNav{position:fixed;left:50%;bottom:calc(10px + env(safe-area-inset-bottom));transform:translateX(-50%);z-index:11;
+  width:min(calc(100% - 24px),580px);display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:4px;padding:6px;
+  background:color-mix(in srgb,var(--card) 88%,transparent);backdrop-filter:blur(18px) saturate(160%);-webkit-backdrop-filter:blur(18px);
+  border:1px solid var(--line);border-radius:22px;box-shadow:0 10px 34px -12px var(--shadow)}
+#mainNav button{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;min-width:0;min-height:56px;
+  padding:5px 3px;border:1px solid transparent;border-radius:16px;background:transparent;box-shadow:none;color:var(--mut);font-size:11px;font-weight:750;line-height:1.2}
+#mainNav button:hover{background:var(--card2);border-color:var(--line)}
+#mainNav button.on{background:linear-gradient(135deg,var(--chip-bg),var(--card));border-color:var(--line2);color:var(--chip-txt)}
+#mainNav .nav-icon{width:24px;height:24px;display:grid;place-items:center;color:inherit}
+#mainNav .nav-icon svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+#syncBadge{bottom:calc(80px + env(safe-area-inset-bottom))}
+@media(min-width:900px){#mainNav{width:560px;bottom:16px}main{padding-bottom:156px}}
+@media(max-width:370px){#mainNav{width:calc(100% - 14px);bottom:calc(6px + env(safe-area-inset-bottom));gap:1px;padding:4px}#mainNav button{font-size:10px;min-height:52px}}
+
+/* Odświeżony system wizualny: wyraźniejsze warstwy, lżejsze karty i czytelniejsza hierarchia. */
+:root{--r:24px}
+html{scroll-behavior:smooth}
+body{background:
+  radial-gradient(1000px 620px at 100% -12%,color-mix(in srgb,var(--glow1) 100%,transparent),transparent 64%),
+  radial-gradient(850px 640px at -12% 28%,var(--glow2),transparent 62%),
+  linear-gradient(180deg,color-mix(in srgb,var(--bg) 94%,var(--card) 6%),var(--bg));background-attachment:fixed}
+.top{background:color-mix(in srgb,var(--panel) 86%,transparent);box-shadow:0 8px 26px -22px var(--shadow);border-bottom-color:color-mix(in srgb,var(--line) 70%,var(--acc) 30%)}
+.logo{letter-spacing:-.045em}
+.logo b{background:linear-gradient(110deg,var(--acc),var(--acc2) 72%,var(--blue));-webkit-background-clip:text;background-clip:text}
+main{max-width:900px;padding-top:16px}
+main.wide{padding-left:clamp(12px,2vw,32px);padding-right:clamp(12px,2vw,32px)}
+h1{font-size:clamp(29px,4vw,38px);letter-spacing:-.045em}
+h1+.sub{font-size:15.5px}
+.sec{margin-top:32px;margin-bottom:12px}
+.sec h2{letter-spacing:.13em;font-size:12px}
+.card{background:linear-gradient(145deg,var(--card),color-mix(in srgb,var(--card) 94%,var(--acc2) 6%));
+  border-color:color-mix(in srgb,var(--line) 82%,var(--acc) 18%);border-radius:24px;
+  box-shadow:0 4px 10px -8px var(--shadow),0 18px 38px -28px var(--shadow);transition:transform .18s ease,box-shadow .18s ease,border-color .18s ease}
+.card2{border-radius:18px}
+.datebar{background:linear-gradient(130deg,var(--card),color-mix(in srgb,var(--card2) 75%,var(--card)));border-color:color-mix(in srgb,var(--line) 70%,var(--acc) 30%);box-shadow:0 8px 22px -18px var(--shadow)}
+.hero{gap:14px;margin-bottom:10px}
+.hero>div{border-radius:26px;padding:20px;border-color:color-mix(in srgb,var(--line) 80%,var(--acc) 20%)}
+.hero>div:first-child{background:linear-gradient(145deg,var(--hero-a),var(--hero-b) 88%)}
+.hero>div:first-child::after{content:"";position:absolute;right:-42px;top:-54px;width:150px;height:150px;border-radius:50%;
+  background:radial-gradient(circle,color-mix(in srgb,var(--acc) 18%,transparent),transparent 70%);pointer-events:none}
+.hero>div:first-child>*{position:relative;z-index:1}
+button{border-radius:15px;transition:transform .12s ease,background .18s ease,border-color .18s ease,box-shadow .18s ease,filter .18s ease}
+button:focus-visible{outline:3px solid color-mix(in srgb,var(--acc) 45%,transparent);outline-offset:2px}
+button.pri{background:linear-gradient(115deg,var(--acc),var(--acc2));box-shadow:0 10px 24px -14px var(--acc)}
+.iconbtn{border-color:color-mix(in srgb,var(--line) 65%,var(--acc) 35%)}
+.dlink{transition:transform .15s ease,background .18s ease,border-color .18s ease}
+#mainNav{border-color:color-mix(in srgb,var(--line) 68%,var(--acc) 32%);box-shadow:0 14px 42px -18px var(--shadow),0 5px 16px -12px var(--acc)}
+#mainNav button{transition:transform .15s ease,background .2s ease,color .2s ease}
+#mainNav button.on{background:linear-gradient(135deg,color-mix(in srgb,var(--chip-bg) 82%,var(--card)),var(--card));border-color:color-mix(in srgb,var(--line2) 60%,var(--acc) 40%);box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--acc) 8%,transparent)}
+#mainNav button.on .nav-icon{animation:nav-pop .22s cubic-bezier(.2,.8,.2,1)}
+@keyframes nav-pop{from{transform:translateY(2px) scale(.86)}to{transform:translateY(0) scale(1)}}
+.dpanel{background:radial-gradient(440px 280px at 0 0,color-mix(in srgb,var(--glow1) 88%,transparent),transparent 72%),var(--panel)}
+.dhead{padding:13px 14px;margin:0 0 18px;border:1px solid color-mix(in srgb,var(--line) 55%,var(--acc) 45%);border-radius:20px;
+  background:linear-gradient(125deg,var(--hero-a),color-mix(in srgb,var(--acc2) 13%,var(--card)) 72%)}
+.dgroup{border-left:3px solid color-mix(in srgb,var(--acc) 62%,var(--acc2));padding-left:9px;margin-left:7px}
+.dlink{margin:3px 0}
+.dlink.on{background:linear-gradient(105deg,var(--chip-bg),color-mix(in srgb,var(--acc2) 13%,var(--card)));border-color:color-mix(in srgb,var(--line2) 55%,var(--acc) 45%)}
+.dlink .ico{background:linear-gradient(140deg,var(--card),color-mix(in srgb,var(--card2) 72%,var(--acc2) 28%));transition:transform .18s ease}
+.dlink.on .ico{color:var(--acc-txt);background:linear-gradient(140deg,var(--acc),var(--acc2))}
+.color-setting{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:12px 0;border-bottom:1px solid var(--line)}
+.color-setting:last-of-type{border-bottom:0}
+.color-setting label{margin:0 0 3px;color:var(--txt);font-size:14px}
+.color-setting .mut{font-size:12.5px}
+.color-setting .colorpick{width:58px;height:46px;min-height:46px;flex-basis:58px;border-radius:13px}
+.theme-card .themes{grid-template-columns:repeat(2,minmax(0,1fr))}
+.theme-card .theme{border-radius:17px}
+@media(min-width:760px){.theme-card .themes{grid-template-columns:repeat(auto-fit,minmax(170px,1fr))}}
+.theme-card .theme.on{background:linear-gradient(130deg,var(--card),var(--card2))}
+@media(hover:hover){.card:hover{transform:translateY(-1px);box-shadow:0 8px 18px -12px var(--shadow),0 22px 44px -30px var(--shadow)}.dlink:hover{transform:translateX(2px)}}
+@media(max-width:520px){main{padding-top:12px;padding-left:12px;padding-right:12px}.card{padding:16px;border-radius:21px}.hero{gap:9px}.hero>div{padding:14px;border-radius:21px}.hero .streak{font-size:37px}.hero .minbox .big{font-size:25px}.datebar{margin-top:2px}.sec{margin-top:27px}}
+@media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}*,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;scroll-behavior:auto!important;transition-duration:.01ms!important}}
+
+/* Praktyczny dashboard: postęp, skróty i szybkie dodawanie bez przewijania całej strony. */
+.day-summary.card{position:relative;overflow:hidden;padding:22px;background:linear-gradient(125deg,var(--hero-a),var(--card) 54%,color-mix(in srgb,var(--card) 88%,var(--acc2) 12%));border-color:color-mix(in srgb,var(--line2) 55%,var(--acc) 45%)}
+.day-summary.card::after{content:"";position:absolute;right:-65px;top:-90px;width:230px;height:230px;border-radius:50%;background:radial-gradient(circle,color-mix(in srgb,var(--acc2) 17%,transparent),transparent 68%);pointer-events:none}
+.summary-top,.summary-bottom{position:relative;z-index:1;display:flex;align-items:center;justify-content:space-between;gap:14px}
+.summary-kicker{font-size:11px;letter-spacing:.14em;font-weight:900;color:var(--mut)}
+.summary-title{margin:3px 0;font-size:20px;line-height:1.2;font-weight:850;letter-spacing:-.025em}
+.summary-pct{flex:0 0 auto;font-size:42px;line-height:1;font-weight:950;letter-spacing:-.06em;color:var(--acc)}
+.summary-pct span{font-size:.48em;letter-spacing:0;margin-left:1px}
+.day-progress-track{position:relative;z-index:1;height:10px;margin:16px 0 14px;overflow:hidden;border-radius:99px;background:color-mix(in srgb,var(--line) 72%,var(--card));box-shadow:inset 0 1px 2px var(--shadow)}
+.day-progress-track i{display:block;width:var(--progress,0%);height:100%;min-width:0;border-radius:inherit;background:linear-gradient(90deg,var(--acc),var(--acc2));box-shadow:0 0 14px color-mix(in srgb,var(--acc) 45%,transparent);transition:width .5s cubic-bezier(.2,.8,.2,1)}
+.summary-bottom{padding-top:13px;border-top:1px solid color-mix(in srgb,var(--line) 70%,var(--acc) 30%)}
+.summary-metrics{display:flex;gap:20px}
+.summary-metrics>div{display:flex;flex-direction:column;line-height:1.15}
+.summary-metrics b{font-size:18px;font-weight:900}
+.summary-metrics span{margin-top:4px;color:var(--mut);font-size:11px;font-weight:750;text-transform:uppercase;letter-spacing:.08em}
+.summary-actions{display:flex;gap:8px}
+.summary-actions button{min-height:40px;padding:8px 12px;border-radius:13px;font-size:13px;white-space:nowrap}
+.day-jumps{display:flex;gap:8px;overflow-x:auto;margin:0 0 18px;padding:2px 1px 7px;scrollbar-width:none}
+.day-jumps::-webkit-scrollbar{display:none}
+.day-jumps button{flex:1 0 auto;display:flex;align-items:center;justify-content:center;gap:7px;min-height:40px;padding:6px 11px;border-radius:13px;
+  background:color-mix(in srgb,var(--card) 86%,var(--acc2) 14%);border-color:var(--line);font-size:12px;color:var(--txt);box-shadow:0 3px 10px -8px var(--shadow)}
+.day-jumps button span{color:var(--acc);font-size:10px;font-weight:900}
+#goalsSection,#minimumSection,#planSection,#eveningSection{scroll-margin-top:88px}
+.week-progress-label{display:flex;justify-content:space-between;align-items:center;margin:0 2px;color:var(--mut);font-size:12px;font-weight:750}
+.week-progress-label b{font-size:15px;color:var(--acc)}
+.week-progress-track{height:8px;margin:5px 0 17px;border-radius:99px;background:var(--card2);overflow:hidden}
+.week-progress-track i{display:block;width:var(--progress,0%);height:100%;border-radius:inherit;background:linear-gradient(90deg,var(--acc),var(--acc2));transition:width .5s cubic-bezier(.2,.8,.2,1)}
+@keyframes screen-enter{from{opacity:.25;transform:translateY(8px) scale(.997)}to{opacity:1;transform:none}}
+@keyframes card-rise{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
+@keyframes progress-fill{from{width:0%;filter:brightness(1.24)}to{width:var(--progress,0%);filter:none}}
+.screen-enter{animation:screen-enter .3s cubic-bezier(.2,.8,.2,1) both}
+#app.screen-enter .day-summary.card{animation:card-rise .44s cubic-bezier(.2,.8,.2,1) both}
+#app.screen-enter .day-jumps{animation:card-rise .42s .07s cubic-bezier(.2,.8,.2,1) both}
+#app.screen-enter .hero>div{animation:card-rise .45s .11s cubic-bezier(.2,.8,.2,1) both}
+#app.screen-enter .hero>div:nth-child(2){animation-delay:.17s}
+#app.screen-enter .day-progress-track i,#app.screen-enter .week-progress-track i{animation:progress-fill .72s cubic-bezier(.2,.8,.2,1) both}
+button.pri:active{transform:translateY(1px) scale(.98)}
+@media(max-width:520px){.day-summary.card{padding:17px}.summary-title{font-size:18px}.summary-pct{font-size:36px}.summary-bottom{align-items:stretch;flex-direction:column;gap:12px}.summary-actions{display:grid;grid-template-columns:1fr 1fr}.day-jumps{gap:6px}.day-jumps button{padding:6px 9px}}
+
+/* Ikony i kontrolki z lekkim efektem 3D: podniesiona powierzchnia, bevel i miękki cień. */
+.dlink .ico{position:relative;overflow:hidden;transform-style:preserve-3d;border-top-color:color-mix(in srgb,var(--card) 70%,white 30%);border-bottom-width:2px;
+  box-shadow:0 4px 0 color-mix(in srgb,var(--line2) 68%,var(--shadow)),0 9px 15px -10px var(--shadow),inset 0 1px 0 rgba(255,255,255,.7);
+  transition:transform .22s cubic-bezier(.2,.8,.2,1),box-shadow .22s ease,filter .22s ease}
+.dlink .ico::after{content:"";position:absolute;left:4px;right:4px;top:3px;height:42%;border-radius:10px 10px 7px 7px;
+  background:linear-gradient(180deg,rgba(255,255,255,.46),rgba(255,255,255,0));pointer-events:none}
+.dlink .ico svg{position:relative;z-index:1;transform:translateZ(7px);filter:drop-shadow(0 1px 0 rgba(255,255,255,.28)) drop-shadow(0 2px 2px var(--shadow))}
+.dlink.on .ico{transform:perspective(150px) rotateX(9deg) rotateY(-8deg) translateY(-2px);box-shadow:0 5px 0 color-mix(in srgb,var(--acc) 58%,var(--shadow)),0 10px 18px -10px var(--acc),inset 0 1px 0 rgba(255,255,255,.65)}
+#mainNav .nav-icon{position:relative;perspective:180px;transform-style:preserve-3d;transition:transform .2s cubic-bezier(.2,.8,.2,1),filter .2s ease}
+#mainNav .nav-icon::before{content:"";position:absolute;inset:0 -6px;border-radius:10px;opacity:0;background:linear-gradient(145deg,var(--acc),var(--acc2));
+  box-shadow:0 3px 0 color-mix(in srgb,var(--acc) 55%,var(--shadow)),0 6px 12px -8px var(--acc);transform:translateZ(-6px) rotateX(-10deg);transition:opacity .2s ease}
+#mainNav .nav-icon svg{position:relative;z-index:1;transition:filter .2s ease}
+#mainNav button.on .nav-icon{transform:translateY(-2px) rotateX(10deg) rotateY(-7deg) scale(1.06)}
+#mainNav button.on .nav-icon::before{opacity:1}
+#mainNav button.on .nav-icon svg{color:var(--acc-txt);filter:drop-shadow(0 1px 0 rgba(255,255,255,.35)) drop-shadow(0 2px 2px var(--shadow))}
+button.ic{border-bottom-width:2px;box-shadow:0 4px 0 color-mix(in srgb,var(--line2) 70%,var(--acc) 30%),0 8px 15px -10px var(--shadow),inset 0 1px 0 rgba(255,255,255,.65)}
+button.ic:active{transform:translateY(2px) scale(.98);box-shadow:0 1px 0 color-mix(in srgb,var(--line2) 70%,var(--acc) 30%),inset 0 1px 0 rgba(255,255,255,.65)}
+.day-summary.card{box-shadow:0 5px 0 color-mix(in srgb,var(--line2) 50%,var(--acc) 50%),0 18px 36px -24px var(--shadow),inset 0 1px 0 rgba(255,255,255,.54)}
+.day-jumps button{border-bottom-width:2px;box-shadow:0 3px 0 color-mix(in srgb,var(--line2) 76%,var(--acc) 24%),0 7px 12px -9px var(--shadow);transition:transform .16s ease,box-shadow .16s ease}
+.day-jumps button:active{transform:translateY(2px);box-shadow:0 1px 0 color-mix(in srgb,var(--line2) 76%,var(--acc) 24%)}
+@media(hover:hover){.dlink:hover .ico{transform:perspective(150px) rotateX(8deg) rotateY(-7deg) translateY(-3px);filter:saturate(1.08)}#mainNav button:not(.on):hover .nav-icon{transform:translateY(-2px) rotateX(7deg)}}
+
+/* Kosz: własna biblioteka drillów, plany na daty i klikalny dziennik. */
+.kosz-migration{border-color:var(--warn-line);background:linear-gradient(145deg,var(--warn-bg),var(--card) 76%)}
+.drill-library-tools{padding:16px}
+.drill-card{overflow:hidden;padding:0}
+.drill-card-open{display:flex;flex-direction:column;align-items:stretch;gap:8px;width:100%;min-height:0;padding:16px;text-align:left;border:0;border-radius:0;background:transparent;box-shadow:none}
+.drill-card-open:hover{background:var(--card2)}
+.drill-card-title{font-size:19px;font-weight:850;line-height:1.25;overflow-wrap:anywhere}
+.drill-card-description{color:var(--mut);font-size:14px;white-space:pre-wrap;overflow-wrap:anywhere}
+.drill-card-media{font-size:13px;font-weight:700;color:var(--acc)}
+.drill-card-actions{padding:0 12px 12px;gap:7px}
+.drill-card-actions button{min-height:40px;flex:1;padding:7px 9px;font-size:13px}
+.drill-tags{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.drill-tag{display:inline-flex;align-items:center;border:1px solid color-mix(in srgb,var(--acc) 26%,var(--line));border-radius:999px;padding:3px 9px;background:color-mix(in srgb,var(--acc) 10%,var(--card));color:var(--acc);font-size:12px;font-weight:750;line-height:1.35}
+.drill-category-picker{display:flex;flex-wrap:wrap;gap:7px;margin:6px 0 12px}
+.drill-category-picker .pill{margin:0;min-height:40px}
+.drill-checklist{display:flex;flex-direction:column;gap:5px;max-height:310px;overflow:auto;padding:5px;border:1px solid var(--line);border-radius:16px;background:var(--card2)}
+.drill-check-row{display:flex;align-items:flex-start;gap:10px;margin:0;padding:10px;border-radius:12px;background:var(--card);cursor:pointer}
+.drill-check-row input{flex:0 0 22px;width:22px;min-height:22px;height:22px;margin:2px 0 0;padding:0}
+.drill-check-row>span{display:flex;flex-direction:column;gap:5px;min-width:0;overflow-wrap:anywhere}
+.drill-ref-list{display:flex;flex-wrap:wrap;gap:7px;margin-top:7px}
+.drill-ref{display:inline-flex;align-items:center;min-height:38px;padding:7px 11px;border-radius:12px;background:var(--card2);color:var(--acc);font-size:13px;text-align:left;overflow-wrap:anywhere}
+.drill-ref.missing{display:inline-flex;align-items:center;padding:7px 10px;border:1px dashed var(--line2);border-radius:12px;color:var(--mut);font-size:13px}
+.drill-description{margin:10px 0;padding:12px;border-radius:14px;background:var(--card2);white-space:pre-wrap;overflow-wrap:anywhere}
+.drill-video-area{margin:12px 0}
+.drill-video{display:block;width:100%;max-height:62vh;border-radius:16px;background:#000;object-fit:contain}
+.drill-external-link{display:flex;align-items:center;justify-content:center;margin:12px 0;padding:11px 16px;min-height:46px;border:1px solid transparent;border-radius:15px;background:linear-gradient(115deg,var(--acc),var(--acc2));color:var(--acc-txt);font-weight:800;box-shadow:0 10px 24px -14px var(--acc);text-decoration:none;text-align:center}
+.drill-external-link:hover{filter:brightness(1.06)}
+.hall-plan-card h3,.journal-card h3{margin:2px 0 0;font-size:19px;overflow-wrap:anywhere}
+.hall-plan-card,.journal-card{overflow:hidden}
+@media(max-width:520px){.drill-card-actions{flex-wrap:wrap}.drill-card-actions button{min-width:calc(33.333% - 6px)}.drill-video{max-height:52vh}.drill-category-picker{gap:6px}}
+@media(max-width:680px){
+  .top{grid-template-columns:minmax(0,1fr) auto;gap:6px 8px;padding:8px 12px}
+  .timerbar{top:100px}
+  .top .left{grid-column:1;grid-row:1;gap:8px}
+  .top .right{grid-column:2;grid-row:1}
+  .top-motto{grid-column:1/-1;grid-row:2;padding-top:1px}
+  .top-motto-title{font-size:15px}
+  .top-motto-quote{font-size:12px;white-space:normal;text-wrap:balance}
+}
+@media(max-width:350px){.top-motto-quote{font-size:11px}}
 </style>
 </head>
 <body>
@@ -261,6 +469,10 @@ main.wide{max-width:none}
   <div class="left">
     <button class="iconbtn" data-act="drawer" aria-label="menu">☰</button>
     <div class="logo">Life <b>OS</b></div>
+  </div>
+  <div class="top-motto" aria-label="Motyw przewodni">
+    <strong class="top-motto-title">Trust The Process.</strong>
+    <strong class="top-motto-quote">“One missed shot isn’t the end of the world.”</strong>
   </div>
   <div class="right">
     <button class="iconbtn" data-act="go" data-to="dzis" aria-label="dziś">🏠</button>
@@ -270,33 +482,106 @@ main.wide{max-width:none}
 <div id="timerbar" class="timerbar hidden"></div>
 
 <main id="app"></main>
+<nav id="mainNav" aria-label="Główna nawigacja">
+  <button type="button" data-act="go" data-to="dzis" aria-current="page"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="m3 10 9-7 9 7M5 9.5V21h14V9.5M9 21v-7h6v7"/></svg></span><span>Dziś</span></button>
+  <button type="button" data-act="go" data-to="tydzien"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="3"/><path d="M16 3v4M8 3v4M3 10h18M8 14h2M14 14h2M8 17h2"/></svg></span><span>Tydzień</span></button>
+  <button type="button" data-act="go" data-to="przypomnienia"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M18 9a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4"/><path d="M12 3V1"/></svg></span><span>Przypomnienia</span></button>
+  <button type="button" data-act="drawer"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="5" cy="5" r="1.5"/><circle cx="12" cy="5" r="1.5"/><circle cx="19" cy="5" r="1.5"/><circle cx="5" cy="12" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="19" cy="12" r="1.5"/><circle cx="5" cy="19" r="1.5"/><circle cx="12" cy="19" r="1.5"/><circle cx="19" cy="19" r="1.5"/></svg></span><span>Więcej</span></button>
+</nav>
 <div id="syncBadge" class="sync-local"></div>
 
 <div id="drawer" class="drawer hidden"><div class="dpanel" id="drawerBox"></div></div>
 <div id="sheet" class="sheet hidden"><div class="box" id="sheetBox"></div></div>
 
 <script type="module">
-// Firebase (logowanie + Firestore). Jeśli SDK się nie załaduje, aplikacja działa lokalnie.
-import { firebaseConfig } from './firebase-config.js';
+// Firebase (logowanie + Firestore + opcjonalne powiadomienia push).
+import { firebaseConfig, webPushVapidKey, pushBackendDeployed } from './firebase-config.js';
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js';
 import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js';
 import { initializeFirestore, persistentLocalCache, doc, getDoc, setDoc, deleteDoc, getDocs, collection, query, orderBy } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js';
+let messagingSDK = null;
+const loadMessagingSDK = async () => {
+  if (!messagingSDK) messagingSDK = await import('https://www.gstatic.com/firebasejs/10.14.1/firebase-messaging.js');
+  return messagingSDK;
+};
 try {
   const app = initializeApp(firebaseConfig);
   const auth = getAuth(app);
   const db = initializeFirestore(app, { localCache: persistentLocalCache({}) });
   window.FB = {
     auth, db, doc, getDoc, setDoc, deleteDoc, getDocs, collection, query, orderBy, projectId: firebaseConfig.projectId,
+    pushVapidConfigured: !!webPushVapidKey,
+    pushBackendDeployed: !!pushBackendDeployed,
+    pushConfigured: !!webPushVapidKey && !!pushBackendDeployed,
     signIn: (e, p) => signInWithEmailAndPassword(auth, e, p),
     register: (e, p) => createUserWithEmailAndPassword(auth, e, p),
     signOut: () => signOut(auth),
-    onUser: cb => onAuthStateChanged(auth, cb)
+    onUser: cb => onAuthStateChanged(auth, cb),
+    enablePush: async () => {
+      if (!auth.currentUser) throw new Error('Najpierw zaloguj się do Firebase.');
+      if (!webPushVapidKey) throw new Error('Brakuje publicznego klucza VAPID w firebase-config.js.');
+      if (!pushBackendDeployed) throw new Error('Serwer przypomnień Firebase nie został jeszcze wdrożony.');
+      if (!/Android/i.test(navigator.userAgent || '')) throw new Error('Powiadomienia są skonfigurowane tylko dla Androida.');
+      if (typeof Notification === 'undefined' || !('serviceWorker' in navigator)) throw new Error('Ta przeglądarka nie obsługuje powiadomień.');
+      const permission = Notification.permission === 'granted' ? 'granted' : await Notification.requestPermission();
+      if (permission !== 'granted') throw new Error('Nie przyznano zgody na powiadomienia w Chrome.');
+      const sdk = await loadMessagingSDK();
+      if (!await sdk.isSupported()) throw new Error('Firebase Messaging nie jest obsługiwany w tej przeglądarce.');
+      const registration = await navigator.serviceWorker.ready;
+      const messaging = sdk.getMessaging(app);
+      const previousToken = localStorage.getItem('lifeos.pushToken');
+      const previousUid = localStorage.getItem('lifeos.pushUid');
+      if (previousToken && previousUid !== auth.currentUser.uid) {
+        await sdk.deleteToken(messaging);
+        localStorage.removeItem('lifeos.pushToken');
+        localStorage.removeItem('lifeos.pushUid');
+      }
+      const token = await sdk.getToken(messaging, { vapidKey: webPushVapidKey, serviceWorkerRegistration: registration });
+      if (!token) throw new Error('Firebase nie zwrócił tokenu tego urządzenia.');
+      if (previousToken && previousToken !== token && previousUid === auth.currentUser.uid) {
+        await deleteDoc(doc(db, 'users', auth.currentUser.uid, 'pushTokens', encodeURIComponent(previousToken))).catch(() => {});
+      }
+      const tokenId = encodeURIComponent(token);
+      await setDoc(doc(db, 'users', auth.currentUser.uid, 'pushTokens', tokenId), {
+        token, platform: 'android', scope: registration.scope, updatedAt: Date.now()
+      }, { merge: true });
+      localStorage.setItem('lifeos.pushToken', token);
+      localStorage.setItem('lifeos.pushUid', auth.currentUser.uid);
+      if (!window.__lifeosOnMessage) {
+        window.__lifeosOnMessage = sdk.onMessage(messaging, payload => {
+          const n = payload.notification || {}, title = payload.data?.title || n.title || 'Life OS';
+          navigator.serviceWorker.ready.then(reg => reg.showNotification(title, {
+            body: payload.data?.body || n.body || 'Masz zaplanowane przypomnienie.',
+            icon: new URL('icon-192.png', registration.scope).href,
+            data: { url: payload.data?.url || registration.scope }
+          })).catch(() => {});
+        });
+      }
+      return token;
+    },
+    disablePush: async () => {
+      const token = localStorage.getItem('lifeos.pushToken');
+      const tokenUid = localStorage.getItem('lifeos.pushUid');
+      if (!token) return;
+      const errors = [];
+      if (auth.currentUser && tokenUid === auth.currentUser.uid) {
+        try { await deleteDoc(doc(db, 'users', auth.currentUser.uid, 'pushTokens', encodeURIComponent(token))); }
+        catch (e) { errors.push(e); }
+      }
+      if (webPushVapidKey) {
+        try { const sdk = await loadMessagingSDK(); await sdk.deleteToken(sdk.getMessaging(app)); }
+        catch (e) { errors.push(e); }
+      }
+      localStorage.removeItem('lifeos.pushToken');
+      localStorage.removeItem('lifeos.pushUid');
+      if (errors.length) throw new Error('Lokalne powiadomienia wyłączono, ale Firebase nie potwierdził usunięcia tokenu. Połącz się z internetem i spróbuj ponownie.');
+    }
   };
 } catch (e) { window.FB_ERROR = e.message; }
 document.dispatchEvent(new Event('fb-ready'));
 </script>
 <script src="produkty.js" defer></script>
-<script src="app.js" defer></script>
+<script src="app.js?v=20261121-foods-favorites-6" defer></script>
 <script>if('serviceWorker' in navigator){navigator.serviceWorker.register('sw.js');}</script>
 </body>
 </html>

@@ -1,4 +1,4 @@
-// Test dymny: renderuje wszystkie ekrany i sprawdza kluczowe zachowania v6 (uruchom: node testy/smoke-v6.js)
+// Test dymny: renderuje wszystkie ekrany i sprawdza kluczowe zachowania Life OS (uruchom: node testy/smoke-v6.js)
 const fs = require('fs'), path = require('path'), vm = require('vm');
 const DIR = path.join(__dirname, '..');
 const els = {};
@@ -12,17 +12,17 @@ const ctx = {
 };
 vm.createContext(ctx);
 vm.runInContext(fs.readFileSync(path.join(DIR, 'produkty.js'), 'utf8') + '\n' + fs.readFileSync(path.join(DIR, 'app.js'), 'utf8') +
-  '\n;globalThis.X={data,ACT,CHG,state,render,day,todayISO,dietaDzis,koszPomiary,cialoTrening,streaks,THEMES,parseEx,shotFields,readShot,extraTotals,dayItems,fluidMl,dayMeals};', ctx);
+  '\n;globalThis.X={data,ACT,CHG,state,render,day,todayISO,dietaDzis,koszPomiary,koszDrille,koszHala,koszDziennik,screenKosz,cialoTrening,streaks,THEMES,parseEx,shotFields,readShot,extraTotals,dayItems,fluidMl,dayMeals,weekSummary,dayComplete,areaSelect,areaLabel,isSchoolArea,isTrainingArea,screenDzis};', ctx);
 const X = ctx.X;
 let fails = 0;
 const ok = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); if (!c) fails++; };
 const run = (name, fn) => { try { fn(); ok(true, name); } catch (e) { ok(false, name + ' – ' + e.message); } };
 
 run('ekrany renderują się bez błędu', () => {
-  for (const sc of ['dzis', 'tydzien', 'kosz', 'cialo', 'dieta', 'biznes', 'kompas', 'przeglad', 'ustaw']) {
+  for (const sc of ['dzis', 'tydzien', 'przypomnienia', 'kosz', 'cialo', 'dieta', 'biznes', 'kompas', 'przeglad', 'ustaw']) {
     X.state.screen = sc; X.render();
   }
-  for (const sub of ['pomiary', 'drille', 'hala', 'dziennik', 'prios', 'diag']) { X.state.screen = 'kosz'; X.state.sub.kosz = sub; X.render(); }
+  for (const sub of ['drille', 'hala', 'dziennik']) { X.state.screen = 'kosz'; X.state.sub.kosz = sub; X.render(); }
   for (const sub of ['dzis', 'kalk', 'baza', 'waga']) { X.state.screen = 'dieta'; X.state.sub.dieta = sub; X.render(); }
   for (const sub of ['trening', 'rutyna']) { X.state.screen = 'cialo'; X.state.sub.cialo = sub; X.render(); }
 });
@@ -30,7 +30,7 @@ run('ekrany renderują się bez błędu', () => {
 run('seria: płomień to SVG, nie emoji', () => {
   X.state.screen = 'dzis'; X.render();
   const html = getEl('app').innerHTML;
-  ok(html.includes('<svg') && html.includes('flameG'), '  płomień SVG na ekranie Dziś');
+  ok(html.includes('<svg') && html.includes('class="flame-icon"') && html.includes('linearGradient'), '  warstwowa ikona płomienia SVG na ekranie Dziś');
   ok(!html.includes('🔥'), '  brak emoji 🔥');
   ok(!html.includes('treningi siłowe'), '  brak licznika „treningi siłowe”');
 });
@@ -43,17 +43,12 @@ run('rzuty: cztery liczniki zamiast checkboxów', () => {
   ok(f.includes('Wskazówka') || f.includes('Cue (wskazówka)'), '  cue opisane po ludzku');
 });
 
-run('rzuty: zapis liczy kategorie i odrzuca > oddanych', () => {
-  X.state.screen = 'kosz'; X.state.sub.kosz = 'pomiary'; X.render();
-  const root = getEl('shotForm');
-  root.querySelector = (sel) => {
-    const m = sel.match(/name="(.+?)"/); const name = m ? m[1] : sel;
-    const val = { date: '2026-10-25', drill: 'Test rzut', made: '3', att: '5', cat_front: '2', cat_back: '1', cat_swish: '0', cat_airball: '4', cue: '', note: '' }[name];
-    return { value: val, checked: false };
-  };
-  X.ACT.shotAdd && X.ACT.shotAdd({});
-  const last = X.data.shots[X.data.shots.length - 1];
-  ok(last && last.cat && last.cat.front === 2 && last.cat.airball === 4, '  kategorie zapisane w pomiarze');
+run('Kosz: tylko nowe Drille, Plan hali i Dziennik', () => {
+  X.state.screen = 'kosz'; X.state.sub.kosz = 'drille'; X.render();
+  const html = getEl('app').innerHTML;
+  ok(html.includes('Wybierz kategorię') && html.includes('Kategorie'), '  biblioteka drillów i zarządzanie kategoriami');
+  ok(html.includes('Plan hali') && html.includes('Dziennik'), '  plan na daty i dziennik są zakładkami');
+  ok(!html.includes('Priorytety') && !html.includes('Diagnoza') && !html.includes('Pomiary'), '  stare sekcje Kosza nie są pokazywane');
 });
 
 run('płomień i seria: dziś zaliczone liczy się od razu', () => {
@@ -150,6 +145,84 @@ run('rzuty: statystyki i wykres dla drilla i okresu', () => {
   ok(f.includes('>Drill<') && !f.includes('>Dryl<'), '  etykieta „Drill”');
   ok(f.includes('Catch and Shoot Midrange') && f.includes('wybierz kategorię'), '  lista głównych kategorii');
   ok(f.includes('placeholder="albo wpisz własny drill"'), '  pole na własny drill');
+});
+
+run('kategorie bloków: własne stałe i tymczasowe, stare wpisy zachowane', () => {
+  X.data.categories = [{ id: 'training', label: 'Trening', color: '#8b5cf6' }];
+  const f = X.areaSelect('');
+  ok(f.includes('value="training"') && f.includes('Dodaj na stałe') && f.includes('Tylko ta aktywność'), '  formularz pokazuje Trening oraz oba tryby dodawania');
+  ok(!f.includes('Biznes') && !f.includes('Mindset') && !f.includes('Szkoła') && !f.includes('Ciało'), '  stare kategorie nie są gotowymi opcjami');
+  ok(X.areaLabel('szkola') === 'Szkoła' && X.areaLabel('tmp:Wycieczka') === 'Wycieczka', '  stare i tymczasowe etykiety są czytelne');
+  ok(X.isSchoolArea('szkola') && X.isSchoolArea('tmp:Szkoła'), '  Szkoła jest rozpoznawana także jako kategoria własna');
+});
+
+run('dodawanie kategorii: stała trafia do listy, tymczasowa tylko do bieżącej aktywności', () => {
+  const originalQuery = ctx.document.querySelector, originalCreate = ctx.document.createElement;
+  const input = { value: 'Nauka' };
+  const select = { options: [{ value: '' }, { value: 'training' }], value: '', appendChild(option) { this.options.push(option); } };
+  ctx.document.querySelector = selector => selector.includes('newCategory') ? input : select;
+  ctx.document.createElement = () => ({ value: '', textContent: '' });
+  X.data.categories = [{ id: 'training', label: 'Trening' }];
+  X.ACT.categoryAdd({ dataset: { mode: 'permanent' } });
+  ok(X.data.categories.some(c => c.label === 'Nauka') && select.value.startsWith('cat-'), '  stała kategoria zapisana i zaznaczona');
+  const before = X.data.categories.length;
+  input.value = 'Tymczasowa';
+  X.ACT.categoryAdd({ dataset: { mode: 'temporary' } });
+  ok(X.data.categories.length === before && select.value === 'tmp:Tymczasowa', '  tymczasowa kategoria nie trafia do wspólnej listy');
+  ctx.document.querySelector = originalQuery; ctx.document.createElement = originalCreate;
+});
+
+run('tydzień: Szkoła poza procentem, ukończone Ciało/Trening liczą się jako treningi', () => {
+  const mon = vm.runInContext('mondayOf(todayISO())', ctx);
+  X.data.categories = [{ id: 'training', label: 'Trening' }, { id: 'work', label: 'Praca' }];
+  X.data.template = [
+    { id: 'school', name: 'Szkoła', from: '08:00', to: '09:00', area: 'szkola', days: [0] },
+    { id: 'training', name: 'Trening', from: '09:00', to: '10:00', area: 'training', days: [0] },
+    { id: 'work', name: 'Praca', from: '10:00', to: '11:00', area: 'work', days: [0] },
+    { id: 'body', name: 'Trening siłowy', from: '11:00', to: '12:00', area: 'cialo', days: [0] }
+  ];
+  X.data.days = { [mon]: { min: { minimum: true }, done: { school: { done: true }, training: { done: true }, work: { done: false }, body: { done: true } } } };
+  X.data.minimum = [{ id: 'minimum', label: 'Minimum' }];
+  X.data.sessions = [{ id: 'session', date: mon }];
+  const sum = X.weekSummary(mon);
+  ok(sum.p === 67, '  wykonanie = 2 z 3 bloków (Szkoła pominięta): ' + sum.p + '%');
+  ok(sum.sess === 3, '  treningi = zapisane sesje + ukończone bloki Ciało/Trening: ' + sum.sess);
+});
+
+run('ręczne zaliczenie dnia wpływa na streak i można je cofnąć', () => {
+  const today = X.todayISO();
+  X.data.days = { [today]: { min: { minimum: false } } };
+  X.data.minimum = [{ id: 'minimum', label: 'Minimum' }];
+  X.state.screen = 'dzis'; X.state.date = today;
+  ok(!X.dayComplete(today), '  niezaliczone minimum nie tworzy streaka samo');
+  X.ACT.dayManual({ dataset: { s: today } });
+  ok(X.dayComplete(today) && X.data.days[today].manualComplete, '  ręczne zaliczenie oznacza dzień jako ukończony');
+  ok(X.streaks().cur === 1, '  ręcznie zaliczony dzień zwiększa streak');
+  X.ACT.dayManual({ dataset: { s: today } });
+  ok(!X.dayComplete(today), '  kliknięcie ponownie cofa ręczne zaliczenie');
+});
+
+run('ocena dnia: skala 1–10 i pole opisowe renderują się i zapisują', () => {
+  const today = X.todayISO();
+  X.state.screen = 'dzis'; X.state.date = today;
+  const input = { value: '11' };
+  X.CHG.dayRating(input);
+  ok(input.value === '10' && X.data.days[today].ev.dayRating === 10, '  ocena jest ograniczona do skali 1–10');
+  const h = X.screenDzis();
+  ok(h.includes('Ocena całego dnia (1–10)') && h.includes('data-f="dayNote"'), '  ocena i opis dnia są widoczne');
+  ok(h.includes('data-act="dayManual"'), '  przycisk ręcznego zaliczenia jest na ekranie Dziś');
+});
+
+run('dashboard: postęp planu, szybkie dodawanie i skoki do sekcji', () => {
+  const h = X.screenDzis();
+  ok(h.includes('day-summary') && h.includes('Postęp planu'), '  podsumowanie postępu dnia jest na górze');
+  ok(h.includes('data-act="extraNew"') && h.includes('data-act="reminderQuick"'), '  szybkie dodawanie bloku i przypomnienia');
+  ok(h.includes('data-act="jumpTo"') && h.includes('id="eveningSection"'), '  skróty przewijają do sekcji dnia');
+  const oldGet = ctx.document.getElementById; let scrolled = false;
+  ctx.document.getElementById = id => id === 'jump-test' ? { scrollIntoView: opts => { scrolled = opts.behavior === 'smooth'; } } : oldGet(id);
+  X.ACT.jumpTo({ dataset: { target: 'jump-test' } });
+  ctx.document.getElementById = oldGet;
+  ok(scrolled, '  akcja skoku przewija płynnie');
 });
 
 console.log(fails ? `\n${fails} FAIL` : '\nSMOKE v6 ALL PASS');

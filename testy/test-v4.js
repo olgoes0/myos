@@ -15,14 +15,14 @@ const ctx = { console: { log() {}, error: console.error }, alert: m => alerts.pu
   window: { scrollTo() {} }, URL: { createObjectURL: () => 'x' }, Blob: function () {}, FileReader: function () {},
   setTimeout: () => {}, clearTimeout: () => {}, setInterval: () => 1, clearInterval() {}, navigator: { onLine: true } };
 vm.createContext(ctx);
-vm.runInContext(fs.readFileSync(path.join(__dirname, '..', 'produkty.js'), 'utf8') + ';' + fs.readFileSync(APP, 'utf8') + `;globalThis.T={data:()=>data,day,save,ACT,CHG,parseMeal,calcTargets,parseEx,timer,e1rm,state,sumMacros,findFood,DEFAULTS,waterTargetL,themeVars,THEMES,render,lastEntry,todayISO,addDays};`, ctx);
+vm.runInContext(fs.readFileSync(path.join(__dirname, '..', 'produkty.js'), 'utf8') + ';' + fs.readFileSync(APP, 'utf8') + `;globalThis.T={data:()=>data,day,save,ACT,CHG,parseMeal,calcTargets,parseEx,timer,e1rm,state,sumMacros,findFood,DEFAULTS,waterTargetL,themeVars,THEMES,themeSection,render,lastEntry,todayISO,addDays};`, ctx);
 const T = ctx.T;
 let fails = 0; const ok = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); if (!c) fails++; };
 const near = (a, b, tol = 1) => Math.abs(a - b) <= tol;
 
 // --- 1. Migracja danych v3 → v4 ---
 let D = T.data();
-ok(D.v === 6, 'wersja danych 6');
+ok(D.v === 7, 'wersja danych 7');
 ok(Array.isArray(D.foods) && D.foods.length >= 25, 'baza produktów domyślnie wypełniona');
 ok(D.profile.protG === 2 && D.profile.fatG === 0.9, 'domyślne g/kg: białko 2, tłuszcz 0,9');
 ok(D.profile.age === null && D.profile.height === null, 'wiek i wzrost puste (nic nie zakodowane)');
@@ -176,7 +176,7 @@ ok(T.parseMeal('talerz barszczu czerwonego')[0].g === 300, 'talerz barszczu (na 
   ok(T.parseMeal('2 butelki coli')[0].g === 660, '2 butelki coli = 660 ml');
   ok(T.parseMeal('szklanka soku pomarańczowego')[0].vol === 250, 'szklanka = 250 ml, pokazana w ml');
   ok(T.parseMeal('150 g kurczaka')[0].vol === null, 'gramy nie są pokazywane jako ml');
-  ok(T.data().foodsV === 7 && T.findFood('Curry z kurczakiem i ryżem') !== null, 'baza: wersja 7 i nowe danie');
+  ok(T.data().foodsV === 10 && T.findFood('Curry z kurczakiem i ryżem') !== null, 'baza: wersja 10 i nowe danie');
   ok(T.parseMeal('kurczaka')[0].name === 'Pierś z kurczaka (surowa)', 'nowe dania nie psują „kurczaka”');
 }
 }
@@ -184,21 +184,27 @@ ok(T.parseMeal('2 jajka')[0].g === 120, 'bez zmian: 2 jajka = 120 g');
 ok(T.parseMeal('150 g kurczaka')[0].g === 150, 'bez zmian: 150 g kurczaka');
 ok(T.data().foods.length >= 400, `baza ma co najmniej 400 pozycji (jest ${T.data().foods.length})`);
 ok(T.findFood('zupa z buraków') && T.findFood('zupa z buraków').piece === 300, 'zupy mają wagę talerza 300 g');
-ok(T.data().foodsV === 7, 'migracja bazy: wersja 7');
+ok(T.data().foodsV === 10, 'migracja bazy: wersja 10');
 
 // --- v6: motywy ---
-ok(Object.keys(T.THEMES).length >= 6, `motywów: ${Object.keys(T.THEMES).length}`);
+ok(Object.keys(T.THEMES).length >= 10, `motywów: ${Object.keys(T.THEMES).length}`);
+const paletteHtml = T.themeSection();
+ok(paletteHtml.includes('data-k="acc2"') && paletteHtml.includes('Kolor uzupełniający') && paletteHtml.includes('Aurora'), 'wybór motywu ma trzeci kolor własny i nowe palety');
 const sv = T.themeVars();
 ok(sv.acc === T.THEMES.jasny.acc, 'domyślny motyw = jasny');
 T.data().ui.theme = 'nocny';
 ok(T.themeVars().dark === true, 'motyw nocny jest ciemny');
 T.data().ui.acc = '#00ff00';
 ok(T.themeVars().acc === '#00ff00' && T.themeVars().acc2 && T.themeVars().accTxt, 'własny kolor akcentu');
+T.data().ui.acc2 = '#dd44ff';
+ok(T.themeVars().acc2 === '#dd44ff', 'własny kolor uzupełniający');
 T.data().ui.bg = '#fafafa';
 ok(T.themeVars().dark === false && T.themeVars().txt !== T.THEMES.nocny.txt, 'własne jasne tło przełącza na jasne napisy');
 T.data().ui.bg = '#101010';
-ok(T.themeVars().dark === true, 'własne ciemne tło = ciemny motyw');
-T.data().ui.acc = null; T.data().ui.bg = null; T.data().ui.theme = 'jasny';
+const darkCustom = T.themeVars();
+ok(darkCustom.dark === true, 'własne ciemne tło = ciemny motyw');
+ok(darkCustom.chipBg !== T.THEMES.nocny.chipBg && darkCustom.okSoft !== T.THEMES.nocny.okSoft, 'ciemne własne tło dopasowuje chip i tło stanu zaliczenia');
+T.data().ui.acc = null; T.data().ui.acc2 = null; T.data().ui.bg = null; T.data().ui.theme = 'jasny';
 
 console.log(fails ? `\n${fails} FAIL` : '\nALL PASS');
 process.exit(fails ? 1 : 0);
